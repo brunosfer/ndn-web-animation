@@ -1,0 +1,2299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  NDN Strategy Lab (NDN Web Animation)
+
+  Copyright 2026 Bruno Fernandes <bruno.fernandes@tum.de>
+  SPDX-License-Identifier: Apache-2.0
+  Licensed under the Apache License, Version 2.0. See LICENSE and NOTICE.
+
+  A self-contained, backend-free sketch of how NDN forwarding strategies
+  (best-route, ASF, multicast, self-learning) behave on a small wireless
+  multi-hop topology. A seeded discrete-event simulator mirrors the forwarding
+  rules of NFD 24.07, the hello, sync and LSA traffic of NLSR, the ndnping and
+  ndnget consumers of ndn-tools and the frame timing of wmediumd. The page's
+  "Model and sources" section lists every property and where it comes from.
+  Open it in a browser; add #selftest to the URL to print all profile
+  measurements as JSON (used by tests/selftest.sh).
+-->
+<title>NDN Strategy Lab</title>
+<style>
+/* Layout: instrument bench. Stage (topology) left, scenario rack right, readouts and profiles below. */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --ink: #18212c;
+  --muted: #5a6776;
+  --line: #d3d9e0;
+  --soft: #e4e9ee;
+  --node: #ffffff;
+  --link: #8d99a8;
+  --accent: #2563c9;
+  --interest: #2563c9;
+  --data: #13875a;
+  --cache: #c27612;
+  --loss: #cf3b3b;
+  --nack: #a63b8c;
+  --hello: #6d4fc9;
+  --dup: #7d8796;
+  --route: #2f3b4a;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1319; --panel: #151c24; --ink: #e5eaf0; --muted: #94a1b1; --line: #28323d; --soft: #1c252f;
+    --node: #1b232d; --link: #5d6a7a; --accent: #6b9bff; --interest: #6b9bff; --data: #39c08a; --cache: #f0a43a;
+    --loss: #ff6b6b; --nack: #e070c4; --hello: #a58cff; --dup: #7b8695; --route: #c9d3de;
+    --series-1: #3987e5; --series-2: #d95926;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1319; --panel: #151c24; --ink: #e5eaf0; --muted: #94a1b1; --line: #28323d; --soft: #1c252f;
+  --node: #1b232d; --link: #5d6a7a; --accent: #6b9bff; --interest: #6b9bff; --data: #39c08a; --cache: #f0a43a;
+  --loss: #ff6b6b; --nack: #e070c4; --hello: #a58cff; --dup: #7b8695; --route: #c9d3de;
+  --series-1: #3987e5; --series-2: #d95926;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-ui); padding-inline: 16px; padding-block: 14px 40px; }
+.wrap { max-width: 1360px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+header h1 { font: 600 26px/1.1 var(--font-display); margin: 0; letter-spacing: .2px; text-wrap: balance; }
+header .sub { color: var(--muted); }
+.tag { font: 600 11px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--cache); border: 1px solid var(--cache); border-radius: 3px; padding: 3px 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.chip { font: 12px/1 var(--font-mono); background: var(--soft); border-radius: 3px; padding: 5px 7px; color: var(--muted); }
+.chip b { color: var(--ink); font-weight: 600; }
+.h2 { font: 600 11px/1 var(--font-ui); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+.bench { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.stage { display: flex; flex-direction: column; min-width: 0; }
+.stage svg { width: 100%; height: auto; display: block; user-select: none; }
+.caption { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.caption b { font: 600 15px/1.25 var(--font-display); }
+.caption p { margin: 0; font-size: 13px; color: var(--muted); max-width: 95ch; }
+.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.clock { font: 600 15px/1 var(--font-mono); font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+.clock small { font-weight: 400; color: var(--muted); }
+
+button { font: 13px/1 var(--font-ui); color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; min-width: 74px; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+select { font: 13px var(--font-ui); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; width: 100%; }
+.seg { display: inline-flex; flex-wrap: wrap; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 4px 4px 0; }
+
+.rack { display: flex; flex-direction: column; }
+.leftcol { display: flex; flex-direction: column; gap: 14px; min-width: 0; position: sticky; top: 8px; }
+@media (min-width: 1001px) {
+  .stage svg { max-height: calc(100vh - 400px); min-height: 240px; }
+  .leftcol #tl { max-height: 160px; overflow: auto; }
+}
+@media (max-width: 1000px) { .leftcol { position: static; } }
+.rack details.sec { border-bottom: 1px solid var(--line); }
+.rack details.sec:last-child { border-bottom: 0; }
+.rack details.sec > summary { padding: 11px 14px; cursor: pointer; font: 600 11px/1.2 var(--font-ui); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.rack details.sec > div { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+table.hide-ref .ref { display: none; }
+.cost { font: 9.5px var(--font-mono); fill: var(--muted); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--panel); stroke-width: 2.5px; stroke-linejoin: round; }
+.cost.dyn { fill: var(--route); opacity: .75; }
+.eff { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.effsum { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 18px; }
+.effsum div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.effsum dt { font-size: 12px; color: var(--muted); }
+.effsum dd { margin: 0; font: 600 15px var(--font-mono); font-variant-numeric: tabular-nums; }
+.effsum dd small { font-weight: 400; font-size: 11px; color: var(--muted); }
+table.efft td, table.efft th { text-align: right; white-space: nowrap; }
+table.efft td:first-child, table.efft th:first-child { text-align: left; }
+.cb { display: inline-block; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 5px; opacity: .55; }
+.fate { display: flex; gap: 2px; height: 14px; border-radius: 3px; overflow: hidden; background: var(--soft); }
+.fate i { display: block; height: 100%; }
+.fate i.extra, .chipk i.extra { opacity: .75; background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--panel) 3px 5px); }
+.chips-k { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); }
+.chipk { display: inline-flex; align-items: center; gap: 6px; }
+.chipk i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.chipk b { color: var(--ink); font: 600 12px var(--font-mono); }
+table.efft th { line-height: 1.25; }
+.tlc { width: 100%; height: 14px; display: block; }
+.rack section { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.rack section:last-child { border-bottom: 0; }
+.row { display: flex; flex-direction: column; gap: 4px; }
+.row > span { font-size: 12px; color: var(--muted); }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.rack .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cons { display: grid; grid-template-columns: auto auto auto; justify-content: start; gap: 6px 8px; align-items: center; font-size: 13px; }
+.cons label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.cons input[type="number"] { width: 70px; }
+table.nodes { font: 12px/1.3 var(--font-mono); }
+table.nodes td { vertical-align: middle; padding: 3px 4px 3px 0; }
+table.nodes td.nm { font-weight: 700; }
+table.nodes tr.down td { opacity: .5; }
+table.nodes td.acts { white-space: nowrap; }
+table.nodes td.acts button, .mini { font: 11px var(--font-mono); padding: 3px 5px; margin-right: 2px; }
+.mini { white-space: nowrap; }
+.lks { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.lks label { display: inline-flex; gap: 3px; align-items: center; cursor: pointer; font: 12px var(--font-mono); }
+.lks label.off { color: var(--loss); }
+.insp details { border-top: 1px solid var(--soft); padding: 4px 0; }
+.insp summary { cursor: pointer; font: 600 11px/1.6 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.insp details > div { padding-top: 4px; }
+.insp .state { font: 600 11px var(--font-ui); margin-left: 8px; color: var(--loss); }
+.presets button { font-size: 12px; padding: 6px 8px; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.slider input { grid-column: 1 / -1; width: 100%; }
+.slider output { font-family: var(--font-mono); color: var(--ink); }
+.toggles { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.toggles label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+input[type="number"] { width: 84px; font: 13px var(--font-mono); padding: 5px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); }
+
+.insp h3 { margin: 0; font: 600 18px/1.2 var(--font-display); }
+.insp .role { font: 12px var(--font-ui); color: var(--muted); margin-left: 6px; }
+table.t { width: 100%; border-collapse: collapse; font: 12px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; }
+table.t th { text-align: left; font: 600 10px/1.2 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 6px 5px 0; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+table.t td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--soft); vertical-align: top; }
+.insp .k { font: 600 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+.empty { color: var(--muted); font-size: 12px; }
+.tbl-scroll { overflow-x: auto; }
+
+.readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1000px) { .readouts { grid-template-columns: minmax(0, 1fr); } }
+.card { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card h2 { display: flex; justify-content: space-between; align-items: baseline; }
+.card h2 b { font: 600 16px/1 var(--font-display); color: var(--ink); letter-spacing: 0; text-transform: none; }
+.stack { display: flex; gap: 2px; height: 10px; border-radius: 2px; overflow: hidden; background: var(--soft); }
+.stack i { display: block; height: 100%; }
+dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 0; font-size: 13px; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; font: 13px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+dl.kv dd.strong { font-weight: 700; }
+dl.kv .sep { grid-column: 1 / -1; border-top: 1px solid var(--soft); margin: 3px 0; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+
+.timeline { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+#tl { display: flex; flex-direction: column; gap: 8px; }
+.tl-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: center; }
+.tl-row > b { font: 600 13px var(--font-mono); }
+.cells { display: flex; flex-wrap: wrap; gap: 2px; }
+.cell { width: 12px; height: 16px; border-radius: 2px; background: var(--soft); position: relative; }
+.cell.pending { background: transparent; outline: 1px dashed var(--muted); outline-offset: -1px; }
+.cell.prod { background: var(--data); }
+.cell.cache { background: var(--cache); }
+.cell.lost { background: var(--loss); }
+.cell .r { position: absolute; left: 0; right: 0; bottom: 1px; text-align: center; font: 700 9px/1 var(--font-mono); color: var(--panel); }
+.events { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev { font: 12px var(--font-mono); padding: 3px 6px; border-radius: 3px; background: var(--soft); color: var(--muted); }
+.ev.done { color: var(--ink); }
+.chart { position: relative; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart .ax { font: 11px var(--font-mono); fill: var(--muted); }
+.chart .grid { stroke: var(--soft); stroke-width: 1; }
+.chart .base { stroke: var(--line); stroke-width: 1; }
+.chart .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; font: 12px var(--font-mono); color: var(--ink); white-space: nowrap; }
+.legend-inline { display: flex; gap: 14px; font-size: 13px; }
+.legend-inline span { display: inline-flex; align-items: center; gap: 6px; }
+.legend-inline i { width: 14px; height: 2px; display: inline-block; }
+
+.profiles { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.profiles .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.profiles table.t { font: 12px/1.4 var(--font-ui); }
+.profiles table.t td.m { font: 11.5px/1.45 var(--font-mono); white-space: pre-line; min-width: 270px; }
+.profiles table.t td.n { font-weight: 600; min-width: 150px; }
+.profiles table.t td.w { min-width: 240px; max-width: 42ch; }
+.profiles tr.cur td { background: var(--soft); }
+
+.lower { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.log { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.log ol { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; font: 12px/1.5 var(--font-mono); }
+.log li { display: grid; grid-template-columns: 76px 30px minmax(0, 1fr); gap: 6px; border-bottom: 1px solid var(--soft); padding: 1px 0; }
+.log li .t { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.log li .n { font-weight: 700; }
+.log li.lI .m { color: var(--interest); } .log li.lD .m { color: var(--data); } .log li.lC .m { color: var(--cache); }
+.log li.lX .m { color: var(--loss); } .log li.lN .m { color: var(--nack); } .log li.lH .m { color: var(--hello); } .log li.lU .m { color: var(--muted); }
+.legend { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; font-size: 13px; }
+.legend li { display: flex; gap: 8px; align-items: center; }
+.legend svg { flex: none; }
+details.assume { padding: 12px 14px; }
+details.assume summary { cursor: pointer; font: 600 11px/1 var(--font-ui); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+details.assume table.t { font: 12.5px/1.4 var(--font-ui); margin-top: 10px; }
+details.assume td:first-child { font-weight: 600; min-width: 150px; }
+details.assume td:last-child { font: 12px/1.4 var(--font-mono); color: var(--muted); }
+code { font: 12px var(--font-mono); background: var(--soft); padding: 1px 4px; border-radius: 3px; }
+
+/* SVG */
+.lnk { stroke: var(--link); stroke-width: 2.5; stroke-linecap: round; }
+.lnk.off { stroke: var(--loss); stroke-dasharray: 5 6; opacity: .55; }
+.lnk.sel { stroke: var(--accent); stroke-width: 5; }
+.lnk.noroute { stroke-dasharray: 2 6; opacity: .7; }
+.lnk.inuse { stroke: var(--accent); stroke-width: 4; opacity: .5; }
+button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var(--line); }
+.lnk-hit { stroke: transparent; stroke-width: 18; cursor: pointer; }
+.lnk-lab { font: 11px var(--font-mono); fill: var(--muted); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+.lnk-lab.loss { fill: var(--loss); }
+.nd circle.body { fill: var(--node); stroke: var(--ink); stroke-width: 2; cursor: pointer; }
+.nd.P circle.body { stroke: var(--data); stroke-width: 3.5; }
+.nd.C circle.body { stroke: var(--interest); stroke-width: 3.5; }
+.nd.nocache circle.body { stroke-dasharray: 4 3; }
+.nd.down { opacity: .35; }
+.nd.sel circle.ring { fill: none; stroke: var(--accent); stroke-width: 2; }
+.nd text.id { font: 700 14px var(--font-mono); fill: var(--ink); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.nd text.cap { font: 11px var(--font-ui); fill: var(--muted); text-anchor: middle; pointer-events: none; }
+.badge text { font: 700 10px var(--font-mono); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.b-cs rect { fill: var(--cache); } .b-cs text { fill: var(--panel); }
+.b-pit rect { fill: var(--interest); } .b-pit text { fill: var(--panel); }
+.b-off rect { fill: var(--soft); } .b-off text { fill: var(--muted); }
+.rt { stroke: var(--route); fill: none; stroke-linecap: round; }
+.rt.main { stroke-width: 2.6; }
+.rt.alt { stroke-width: 1.4; stroke-dasharray: 3 3; opacity: .75; }
+.rt.mc { stroke-width: 1.5; stroke-dasharray: 2 4; opacity: .8; }
+.rt-head { fill: var(--route); }
+@media (prefers-reduced-motion: reduce) { .ripple { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>NDN Strategy Lab</h1>
+    <span class="sub">Forwarding strategies on a small wireless multi-hop network</span>
+    <span class="tag">Sketch</span>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <div class="bench">
+    <div class="leftcol">
+    <div class="panel stage">
+      <div class="caption" id="caption"></div>
+      <svg id="stage" viewBox="0 0 1000 540" role="img" aria-label="Topology with producer p1 on the left and consumers c1 and c2 on the right">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="rt-head"></path>
+          </marker>
+        </defs>
+        <g id="gLinks"></g><g id="gCost"></g><g id="gRoutes"></g><g id="gFx"></g><g id="gNodes"></g><g id="gPk"></g>
+      </svg>
+      <div class="transport">
+        <button class="primary" id="btnPlay">Play</button>
+        <button id="btnStep" title="Run to the next event">Step</button>
+        <button id="btnReset" title="Restart from t = 0 with the current settings">Restart</button>
+        <span class="seg" id="segSpeed" aria-label="Animation speed"></span>
+        <button id="btnTurbo" aria-pressed="false" title="Run the simulation quickly without drawing packets">Fast-forward</button>
+        <span class="seg" id="segFF" aria-label="Fast-forward speed"></span>
+        <button id="btnSkip60">Skip 60 s</button>
+        <button id="btnSkip600">Skip 10 min</button>
+        <span class="clock" id="clock">t = 0.000 s</span>
+      </div>
+    </div>
+      <div class="panel timeline">
+        <h2 class="h2" id="tlTitle">Segment timeline</h2>
+        <div class="events" id="events"></div>
+        <div id="tl"></div>
+      </div>
+    </div>
+
+    <aside class="panel rack">
+      <details class="sec" open><summary>Profile</summary><div>
+        <select id="selProfile" aria-label="Profile"></select>
+        <p class="hint">A profile sets the scenario and its timed events. You can still change the strategy or the routing to compare.</p>
+      </div></details>
+      <details class="sec" open><summary>Scenario</summary><div>
+        <div class="row"><span>Strategy for <span id="lbPrefix">/prod</span> (everything else keeps NFD's best-route on /)</span><div class="seg" id="segStrategy"></div></div>
+        <div class="row"><span>Layer</span><div class="seg" id="segLayer"></div></div>
+        <div class="row"><span>Faces</span><div class="seg" id="segFaces"></div></div>
+        <div class="row"><span>Routing</span><div class="seg" id="segRouting"></div></div>
+        <p class="hint" id="routingHint"></p>
+      </div></details>
+      <details class="sec" open><summary>Producer and consumers</summary><div>
+        <div class="row"><span>Application</span><div class="seg" id="segApp"></div></div>
+        <div class="slider"><label for="inCount" id="lbCount">Segments per consumer</label><output id="outCount"></output><input type="range" id="inCount" min="5" max="200" step="1"></div>
+        <div class="slider"><label for="inRate" id="lbRate">Interests per second</label><output id="outRate"></output><input type="range" id="inRate" min="0.2" max="20" step="0.2"></div>
+        <div class="cons">
+          <label title="Connect or disconnect the producer application at any time; the start time applies at the next restart"><input type="checkbox" id="onP1"> p1 serves from</label><input type="number" id="stP1" min="0" max="3600" step="0.1" aria-label="p1 start time"><span>s</span>
+          <label><input type="checkbox" id="onC1"> c1 starts at</label><input type="number" id="stC1" min="0" max="3600" step="0.1" aria-label="c1 start time"><span>s</span>
+          <label><input type="checkbox" id="onC2"> c2 starts at</label><input type="number" id="stC2" min="0" max="3600" step="0.1" aria-label="c2 start time"><span>s</span>
+          <label for="inPrefix">Data prefix</label><input type="text" id="inPrefix" spellcheck="false" style="width:110px;font:13px var(--font-mono);padding:5px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink)"><span></span>
+          <label for="inSeed">Seed</label><input type="number" id="inSeed" min="1" max="99999"><span></span>
+        </div>
+      </div></details>
+      <details class="sec" open><summary>Nodes and links</summary><div>
+        <div class="tbl-scroll"><table class="t nodes" id="nodeTable"></table></div>
+        <div class="bar">
+          <p class="hint">On: the node's radio (off keeps its tables). CS: caching. Clear empties the Content Store or the FIB (the PIT cannot be emptied in NFD). Links: in range or not. Click a node or a link on the map for loss, cost, routes and every table.</p>
+          <button type="button" class="mini" id="btnDefaults">Reset to defaults</button>
+        </div>
+      </div></details>
+      <details class="sec" open><summary>Settings</summary><div>
+        <div class="toggles" style="flex-direction:column;align-items:flex-start;gap:6px">
+          <label title="Off: costs appear only on the links and faces that carried Interests, Data or Nacks in the last seconds"><input type="checkbox" id="tgCost" checked> Show all costs (off: only on the path in use)</label>
+          <label title="The dark arrows from each node: its best next hop for the data prefix, and dashed its alternatives"><input type="checkbox" id="tgRoutes" checked> Show routes</label>
+          <label title="Links that no node has a route over are drawn dotted; the radios are still in range"><input type="checkbox" id="tgDash" checked> Dot links that no route uses</label>
+          <label title="Links that carried Interests, Data or Nacks in the last seconds are drawn wide in the accent colour"><input type="checkbox" id="tgPath"> Highlight the path in use</label>
+          <label title="Unicast frames heard by a neighbour they are not addressed to, discarded below NFD"><input type="checkbox" id="tgOver" checked> Show overheard frames</label>
+          <label title="The expanding ring of a multicast (broadcast) frame"><input type="checkbox" id="tgRipple" checked> Show broadcast ripples</label>
+          <label title="CS and PIT counters next to each node"><input type="checkbox" id="tgBadges" checked> Show CS and PIT counters</label>
+          <label title="Loss rate and flip period written beside a link"><input type="checkbox" id="tgLabels" checked> Show loss and flip labels</label>
+        </div>
+      </div></details>
+      <details class="sec" open id="secInsp"><summary>Inspector</summary><div class="insp" id="insp"></div></details>
+    </aside>
+  </div>
+
+  <div class="readouts" id="readouts"></div>
+
+  <div class="panel eff">
+    <h2 class="h2">Transmission efficiency</h2>
+    <div class="fate" id="effBar" role="img" aria-label="What the transmitted frames were"></div>
+    <div class="chips-k" id="effKey"></div>
+    <dl class="effsum" id="effSum"></dl>
+    <div class="tbl-scroll"><table class="t efft" id="effTable"></table></div>
+    <p class="hint">Minimum Interest frames: for every Data a consumer received, one Interest per hop on the shortest path to the node that served it (producer or cache), with the links in range at that moment. Efficiency is that minimum divided by the Interest frames actually sent, so 100% means no Interest was wasted. Suppressed: retransmissions a node did not forward because they came within the suppression interval. Lost: frames a node sent that no one received.</p>
+  </div>
+
+  <div class="panel profiles">
+    <div class="bar">
+      <h2 class="h2">Profiles: where each strategy fails</h2>
+      <button id="btnMeasure">Measure all profiles</button>
+    </div>
+    <p class="hint" id="measureNote">The measured columns come from running each profile here, without animation, with the seed shown above. Both consumers' results are added together.</p>
+    <div class="tbl-scroll"><table class="t" id="profTable"></table></div>
+  </div>
+
+  <div class="lower">
+    <div class="panel log">
+      <h2 class="h2">Event log (newest first)</h2>
+      <ol id="log"></ol>
+    </div>
+    <div class="panel legend">
+      <h2 class="h2">Legend</h2>
+      <ul id="legend"></ul>
+    </div>
+  </div>
+
+  <details class="panel assume">
+    <summary>Model and sources</summary>
+    <div class="toggles" style="margin-top:10px"><label><input type="checkbox" id="tgRefs"> Show the reference column (also shown when you hover a row)</label></div>
+    <div class="tbl-scroll"><table class="t hide-ref" id="sources"></table></div>
+  </details>
+  <pre id="selftest" hidden></pre>
+</div>
+
+<script>
+'use strict';
+
+/* ======================================================================
+   Parameters (stock values; the "Model and sources" table lists the references)
+   ====================================================================== */
+const P = {
+  app: 0.0002, proc: 0.0005,
+  radio: { rate: 120, ackRate: 10, slot: 9, sifs: 16, difs: 34, cwMin: 15, cwMax: 1023, tries: 4, macHdr: 36, ipUdp: 28 },
+  size: { I: 50, D: 1150, Dping: 100, N: 58, Hreq: 60, Hrep: 200, Sreq: 200, Srep: 300, Lreq: 100, Lrep: 300 },
+  lifetime: 4, rto: 1, maxRetx: 3, interval: 1, start: 0.5,
+  dnl: 6, csMax: 65536,   // nfd.conf.sample.in:59-63, cs_max_packets 65536, cs_policy lru
+  rs: { initial: 0.010, max: 0.250, mult: 2 },
+  asf: { probing: 60, maxTimeouts: 3, linger: 0.050, minRto: 0.2, maxRto: 60, initRto: 1 },
+  sl: { route: 600, cost: 2048 },
+  nlsr: { hello: 60, timeout: 1, tries: 3, adjBuild: 10, calc: 15, maxFaces: 3, sync: 30, jitterMin: 0.1, jitterMax: 0.5, refresh: 1800, lsaLifetime: 4 },
+  ping: { interval: 1, timeout: 4, freshness: 1 },
+  get: { initCwnd: 2, beta: 0.7, C: 0.4, k: 8, minRto: 0.2, maxRto: 60, initRto: 1, retries: 15, payload: 1024 },
+  flap: 10,   // default flip period in seconds
+  asfLife: 300,   // ASF measurements-lifetime (asf-measurements.hpp:225)
+};
+const BASE_RATE = 0.0008 / 0.75;  // simulated seconds per wall second at 1x (an Interest hop takes about 0.6 s)
+const FF_RATES = [10, 30, 100];   // fast-forward: simulated seconds per wall second
+const CHART_BIN = 0.1;            // throughput chart bin in seconds
+
+/* ======================================================================
+   Topology
+   ====================================================================== */
+const NODE_DEFS = [
+  { id: 'p1', col: 0, row: 1, role: 'P' },
+  { id: 'n1', col: 1, row: 0 }, { id: 'n2', col: 2, row: 0 }, { id: 'n3', col: 3, row: 0 }, { id: 'c1', col: 4, row: 0, role: 'C' },
+  { id: 'm1', col: 1, row: 1 }, { id: 'm2', col: 2, row: 1 }, { id: 'm3', col: 3, row: 1 },
+  { id: 's1', col: 1, row: 2 }, { id: 's2', col: 2, row: 2 }, { id: 's3', col: 3, row: 2 }, { id: 'c2', col: 4, row: 2, role: 'C' },
+];
+const LINK_DEFS = [
+  ['p1', 'm1'], ['m1', 'm2'], ['m2', 'm3'],
+  ['n1', 'n2'], ['n2', 'n3'], ['n3', 'c1'],
+  ['s1', 's2'], ['s2', 's3'], ['s3', 'c2'],
+  ['n1', 'm1'], ['m1', 's1'], ['n2', 'm2'], ['m2', 's2'], ['n3', 'm3'], ['m3', 's3'],
+  ['p1', 's1'], ['m3', 'c1'], ['m3', 'c2'],
+];
+const linkId = (a, b) => (a < b ? a + '-' + b : b + '-' + a);
+// Defaults: p1–s1 out of range (m1 is the bottleneck); c2–s3 slightly more expensive, so c2 prefers m3
+// and shares its cache with c1 even when p1–s1 is switched on (equal-cost ties are otherwise undefined).
+const LINK_DEFAULTS = { 'p1-s1': { on: false }, 'c2-s3': { cost: 12 } };
+function defaultLink(id) { return Object.assign({ on: true, loss: 0, cost: 10 }, LINK_DEFAULTS[id] || {}); }
+const POS = {};
+for (const d of NODE_DEFS) POS[d.id] = { x: 90 + d.col * 205, y: 95 + d.row * 175 };
+const CONSUMERS = ['c1', 'c2'];
+const MAC = {}; NODE_DEFS.forEach((d, i) => { MAC[d.id] = '02:00:00:00:00:' + String(i + 1).padStart(2, '0'); });
+const IP = {}; NODE_DEFS.forEach((d, i) => { IP[d.id] = '10.0.0.' + (i + 1); });
+
+/* ======================================================================
+   Utilities
+   ====================================================================== */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const lt = (x, y) => x.t < y.t || (x.t === y.t && x.s < y.s);
+class Heap {
+  constructor() { this.a = []; this.s = 0; }
+  push(t, fn) {
+    const a = this.a; a.push({ t, s: this.s++, fn });
+    let i = a.length - 1;
+    while (i > 0) { const p = (i - 1) >> 1; if (lt(a[i], a[p])) { [a[i], a[p]] = [a[p], a[i]]; i = p; } else break; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last; let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1; let m = i;
+        if (l < a.length && lt(a[l], a[m])) m = l;
+        if (r < a.length && lt(a[r], a[m])) m = r;
+        if (m === i) break;
+        [a[i], a[m]] = [a[m], a[i]]; i = m;
+      }
+    }
+    return top;
+  }
+  peek() { return this.a.length ? this.a[0].t : Infinity; }
+}
+// wmediumd pkt_duration (wmediumd.c:60-64), rate in 100 kbit/s
+function pktDurUs(len, rate) { return 20 + 4 * Math.ceil((16 + 8 * len + 6) * 10 / (4 * rate)); }
+// wmediumd: each try costs DIFS + duration; retries add backoff cw*slot/2 (cw doubling); a missing ACK costs the ACK time
+function txTimeUs(len, tries, success, noack) {
+  const R = P.radio, dur = pktDurUs(len, R.rate), ackT = pktDurUs(14, R.ackRate) + R.sifs;
+  if (noack) return R.difs + dur;
+  let us = 0, cw = R.cwMin;
+  for (let j = 0; j < tries; j++) {
+    us += R.difs + dur;
+    if (j > 0) { us += cw * R.slot / 2; cw = Math.min(R.cwMax, cw * 2 + 1); }
+    if (!(success && j === tries - 1)) us += ackT;
+  }
+  return us;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+const ms = s => (isNaN(s) ? '–' : (s * 1000).toFixed(s < 0.1 ? 1 : 0) + ' ms');
+
+/* ======================================================================
+   Strategies (mirroring NFD daemon/fw)
+   ====================================================================== */
+const IN_SAME = 1, IN_OTHER = 2, OUT_SAME = 4, OUT_OTHER = 8;
+const NACK_SEV = { Congestion: 1, Duplicate: 2, NoRoute: 3 };
+
+function hasPendingOutRecords(pit, now) {
+  for (const o of pit.out.values()) if (o.expiry >= now && !o.nack) return true;
+  return false;
+}
+// algorithm.cpp isNextHopEligible
+function eligible(inFace, nh, pit, wantUnused, now) {
+  const out = nh.face;
+  if (out.id === inFace.id && out.linkType !== 'adhoc') return false;
+  if (wantUnused) { const o = pit.out.get(out.id); if (o && o.expiry > now) return false; }
+  return true;
+}
+// retx-suppression-exponential.cpp
+function rsPerPit(n, pit) {
+  const now = n.sim.now;
+  if (!hasPendingOutRecords(pit, now)) return 'NEW';
+  let last = -Infinity; for (const o of pit.out.values()) last = Math.max(last, o.lastRenewed);
+  if (pit.rs == null) pit.rs = P.rs.initial;
+  if (now - last < pit.rs) return 'SUPPRESS';
+  pit.rs = Math.min(P.rs.max, pit.rs * P.rs.mult);
+  return 'FORWARD';
+}
+function rsPerUpstream(n, pit, face) {
+  const o = pit.out.get(face.id);
+  if (!o) return 'NEW';
+  if (o.rs == null) o.rs = P.rs.initial;
+  return (n.sim.now - o.lastRenewed) < o.rs ? 'SUPPRESS' : 'FORWARD';
+}
+function rsIncrement(o) { o.rs = Math.min(P.rs.max, (o.rs == null ? P.rs.initial : o.rs) * P.rs.mult); }
+function earliestOutRecord(inFace, nhs, pit) {
+  let best = null, bt = Infinity;
+  for (const nh of nhs) {
+    if (!eligible(inFace, nh, pit, false)) continue;
+    const o = pit.out.get(nh.face.id);
+    if (o && o.lastRenewed < bt) { bt = o.lastRenewed; best = nh; }
+  }
+  return best;
+}
+// process-nack-traits.cpp
+function processNack(n, inFace, pit) {
+  let notNacked = 0, lastFace = null, least = null;
+  for (const [fid, o] of pit.out) {
+    if (!o.nack) { notNacked++; lastFace = fid; continue; }
+    if (least === null || NACK_SEV[o.nack] < NACK_SEV[least]) least = o.nack;
+  }
+  if (notNacked === 1 && pit.in.has(lastFace)) { n.sendNack(pit, n.faceById.get(lastFace), least); return; }
+  if (notNacked > 0) return;
+  n.sendNacks(pit, least);
+}
+
+const Base = {
+  afterContentStoreHit(n, D, inFace, pit) { n.sendData(D, inFace, pit); },
+  afterReceiveData(n, D, inFace, pit) {
+    if (this.beforeSatisfy) this.beforeSatisfy(n, D, inFace, pit);
+    n.sendDataToAll(D, pit, inFace);
+  },
+  afterReceiveNack() {},
+  onInterestLoop(n, I, inFace) { n.sendNackDirect(inFace, I, 'Duplicate'); },
+};
+
+const BestRoute = Object.assign(Object.create(Base), {
+  key: 'best-route',
+  afterReceiveInterest(n, I, inFace, pit) {
+    const now = n.sim.now, res = rsPerPit(n, pit);
+    if (res === 'SUPPRESS') { n.c.supp++; n.log(`suppressed retransmission of ${I.name}`, 'U'); return; }
+    const nhs = n.fib(I.name);
+    if (res === 'NEW') {
+      const nh = nhs.find(h => eligible(inFace, h, pit, false, now));
+      if (!nh) { n.log(`no route for ${I.name}, Nack NoRoute`, 'N'); n.sendNack(pit, inFace, 'NoRoute'); n.rejectPending(pit); return; }
+      n.log(`new ${I.name} → ${n.faceName(nh.face)}`, 'I');
+      n.sendInterest(pit, nh.face, I); return;
+    }
+    let nh = nhs.find(h => eligible(inFace, h, pit, true, now));
+    if (nh) { n.log(`retransmission ${I.name} → unused ${n.faceName(nh.face)}`, 'I'); n.sendInterest(pit, nh.face, I); return; }
+    nh = earliestOutRecord(inFace, nhs, pit);
+    if (nh) { n.log(`retransmission ${I.name} → retry ${n.faceName(nh.face)}`, 'I'); n.sendInterest(pit, nh.face, I); }
+  },
+  afterReceiveNack(n, N, inFace, pit) { processNack(n, inFace, pit); },
+});
+
+const Multicast = Object.assign(Object.create(Base), {
+  key: 'multicast',
+  afterReceiveInterest(n, I, inFace, pit) {
+    const now = n.sim.now, sent = [];
+    for (const nh of n.fib(I.name)) {
+      const res = rsPerUpstream(n, pit, nh.face);
+      if (res === 'SUPPRESS') { n.c.supp++; continue; }
+      if (!eligible(inFace, nh, pit, false, now)) continue;
+      const o = n.sendInterest(pit, nh.face, I);
+      if (res === 'FORWARD') rsIncrement(o);
+      sent.push(n.faceName(nh.face));
+    }
+    if (sent.length) n.log(`${I.name} → ${sent.join(', ')}`, 'I');
+  },
+  // multicast-strategy.cpp afterNewNextHop: forward a pending Interest to a next hop that just appeared
+  afterNewNextHop(n, nh, pit) {
+    if (!pit.I) return;
+    for (const fid of pit.in.keys()) {
+      if (eligible(n.faceById.get(fid), nh, pit, false, n.sim.now)) { n.log(`new next hop ${n.faceName(nh.face)}: pending ${pit.name} forwarded`, 'I'); n.sendInterest(pit, nh.face, pit.I); break; }
+    }
+  },
+  onInterestLoop() {},
+});
+
+const ASF = Object.assign(Object.create(Base), {
+  key: 'asf',
+  // what ASF ranks a face by: smoothed RTT, or unmeasured / timed out
+  metric(n, f) {
+    const info = this.fi(n, f.id, false), inFib = n.fibD().some(h => h.face.id === f.id);
+    if (!info && !inFib) return null;
+    if (!info || info.lastRtt === 'none') return '?';
+    if (info.lastRtt === 'timeout') return 't/o';
+    return (info.srtt * 1000).toFixed(1) + 'ms';
+  },
+  meas(n) { return n.asf || (n.asf = { faces: new Map(), firstProbe: false, due: false }); },
+  fi(n, fid, create) {
+    const m = this.meas(n); let f = m.faces.get(fid);
+    if (f && f.expires <= n.sim.now) { m.faces.delete(fid); f = null; }   // measurements expire unless the face is used
+    if (!f && create) { f = { lastRtt: 'none', srtt: null, rttvar: null, rto: P.asf.initRto, nTimeouts: 0, tok: 0, armed: false, lastName: null, expires: 0 }; m.faces.set(fid, f); }
+    if (f && create) f.expires = n.sim.now + P.asfLife;
+    return f || null;
+  },
+  extend(n, f) { if (f) f.expires = n.sim.now + P.asfLife; },
+  fwdRank(nh, f) { const pri = !f || f.lastRtt === 'none' ? 2 : f.lastRtt === 'timeout' ? 3 : 1; return [pri, pri === 1 ? f.srtt : Infinity, nh.cost, nh.face.id]; },
+  probeRank(nh, f) { const pri = !f || f.lastRtt === 'none' ? 1 : f.lastRtt === 'timeout' ? 3 : 2; return [pri, pri === 2 ? f.srtt : Infinity, nh.cost, nh.face.id]; },
+  cmp(a, b) { for (let i = 0; i < a.length; i++) { if (a[i] < b[i]) return -1; if (a[i] > b[i]) return 1; } return 0; },
+  bestFace(n, inFace, pit, isNew) {
+    const now = n.sim.now; let best = null, br = null;
+    for (const nh of n.fib(pit.name)) {
+      if (!eligible(inFace, nh, pit, !isNew, now)) continue;
+      const r = this.fwdRank(nh, this.fi(n, nh.face.id, false));
+      if (!best || this.cmp(r, br) < 0) { best = nh.face; br = r; }
+    }
+    return best;
+  },
+  forward(n, I, face, pit) {
+    const o = n.sendInterest(pit, face, I), f = this.fi(n, face.id, true);
+    if (!f.armed) {
+      f.armed = true; f.lastName = I.name; const tok = ++f.tok;
+      n.sim.after(f.rto, () => { if (f.tok !== tok || !f.armed) return; f.armed = false; this.onTimeoutOrNack(n, I.name, face.id, false); });
+    }
+    return o;
+  },
+  cancelTimeout(f, name) { if (f.armed && f.lastName === name) { f.armed = false; f.tok++; } },
+  isProbingNeeded(n) {
+    const m = this.meas(n);
+    if (!m.firstProbe) { m.firstProbe = true; n.sim.after(Math.floor(n.sim.rand() * 5001) / 1000, () => { m.due = true; }); }
+    return m.due;
+  },
+  sendProbe(n, I, inFace, used, pit) {
+    if (!this.isProbingNeeded(n)) return;
+    const cand = [];
+    for (const nh of n.fib(pit.name)) {
+      if (nh.face.id === inFace.id || nh.face.id === used.id) continue;
+      cand.push({ nh, r: this.probeRank(nh, this.fi(n, nh.face.id, false)) });
+    }
+    if (!cand.length) return;
+    cand.sort((a, b) => this.cmp(a.r, b.r));
+    let pick;
+    if (cand[0].r[0] === 1) pick = cand[0].nh;
+    else {
+      const k = cand.length, sum = (k + 1) * k / 2, x = n.sim.rand(); let off = 0;
+      for (let j = 0; j < k; j++) { off += (k - j) / sum; if (x <= off) { pick = cand[j].nh; break; } }
+      if (!pick) pick = cand[k - 1].nh;
+    }
+    const probe = Object.assign({}, I, { nonce: n.sim.nonce(), probe: true });
+    n.log(`probe ${I.name} → ${n.faceName(pick.face)}`, 'I');
+    this.forward(n, probe, pick.face, pit);
+    const m = this.meas(n); m.due = false;
+    n.sim.after(P.asf.probing, () => { m.due = true; });
+  },
+  afterReceiveInterest(n, I, inFace, pit) {
+    const now = n.sim.now;
+    if (!hasPendingOutRecords(pit, now)) {
+      const f = this.bestFace(n, inFace, pit, true);
+      if (!f) { n.log(`no route for ${I.name}, Nack NoRoute`, 'N'); n.sendNack(pit, inFace, 'NoRoute'); n.rejectPending(pit); return; }
+      n.log(`new ${I.name} → ${n.faceName(f)}`, 'I');
+      this.forward(n, I, f, pit);
+      this.sendProbe(n, I, inFace, f, pit);
+      return;
+    }
+    const f = this.bestFace(n, inFace, pit, false);
+    if (f) {
+      const res = rsPerUpstream(n, pit, f);
+      if (res === 'SUPPRESS') { n.c.supp++; n.log(`suppressed retransmission of ${I.name}`, 'U'); return; }
+      n.log(`retransmission ${I.name} → ${n.faceName(f)}`, 'I');
+      const o = this.forward(n, I, f, pit);
+      if (res === 'FORWARD') rsIncrement(o);
+      return;
+    }
+    const nh = earliestOutRecord(inFace, n.fib(pit.name), pit);
+    if (!nh) return;
+    const res = rsPerUpstream(n, pit, nh.face);
+    if (res === 'SUPPRESS') { n.c.supp++; n.log(`suppressed retransmission of ${I.name}`, 'U'); return; }
+    n.log(`retransmission ${I.name} → retry ${n.faceName(nh.face)}`, 'I');
+    const o = n.sendInterest(pit, nh.face, I);
+    if (res === 'FORWARD') rsIncrement(o);
+  },
+  beforeSatisfy(n, D, inFace, pit) {
+    const f = this.fi(n, inFace.id, false);
+    if (!f) return;
+    const o = pit.out.get(inFace.id);
+    if (o) {
+      const rtt = n.sim.now - o.lastRenewed;
+      f.lastRtt = rtt;
+      if (f.srtt == null) { f.srtt = rtt; f.rttvar = rtt / 2; }
+      else { f.rttvar = 0.75 * f.rttvar + 0.25 * Math.abs(f.srtt - rtt); f.srtt = 0.875 * f.srtt + 0.125 * rtt; }
+      f.rto = Math.min(P.asf.maxRto, Math.max(P.asf.minRto, f.srtt + 4 * f.rttvar));
+    }
+    n.setExpiry(pit, P.asf.linger);
+    this.cancelTimeout(f, D.name);
+    f.nTimeouts = 0; this.extend(n, f);
+  },
+  afterReceiveNack(n, N, inFace, pit) { this.onTimeoutOrNack(n, pit.name, inFace.id, true); processNack(n, inFace, pit); },
+  onTimeoutOrNack(n, name, fid, isNack) {
+    const f = this.fi(n, fid, false); if (!f) return;
+    f.nTimeouts++;
+    if (f.nTimeouts < P.asf.maxTimeouts && !isNack) { this.extend(n, f); this.cancelTimeout(f, name); return; }
+    f.lastRtt = 'timeout'; this.cancelTimeout(f, name); f.nTimeouts = 0;
+    n.log(`face to ${n.faceName(n.faceById.get(fid))} marked timed out`, 'X');
+  },
+});
+
+const SelfLearning = Object.assign(Object.create(Base), {
+  key: 'self-learning',
+  afterReceiveInterest(n, I, inFace, pit) {
+    const nhs = n.fib(I.name), inR = pit.in.get(inFace.id);
+    if (I.nonDiscovery) {
+      inR.nonDisc = true;
+      if (!nhs.length) { n.log(`no route for non-discovery ${I.name}, Nack NoRoute`, 'N'); n.sendNack(pit, inFace, 'NoRoute'); n.rejectPending(pit); }
+      else this.multicastInterest(n, I, inFace, pit, nhs);
+    } else {
+      inR.nonDisc = false;
+      if (!nhs.length) this.broadcastInterest(n, I, inFace, pit);
+      else { I.nonDiscovery = true; this.multicastInterest(n, I, inFace, pit, nhs); }
+    }
+  },
+  broadcastInterest(n, I, inFace, pit) {
+    const sent = [];
+    for (const f of [...n.faces].reverse()) {
+      if ((f.id === inFace.id && f.linkType !== 'adhoc') || f.local) continue;
+      const o = n.sendInterest(pit, f, I); o.nonDisc = false; sent.push(n.faceName(f));
+    }
+    n.log(`discovery ${I.name} → every face (${sent.join(', ')})`, 'I');
+  },
+  multicastInterest(n, I, inFace, pit, nhs) {
+    const now = n.sim.now, sent = [];
+    for (const nh of nhs) {
+      if (!eligible(inFace, nh, pit, false, now)) continue;
+      const o = n.sendInterest(pit, nh.face, I); o.nonDisc = true; sent.push(n.faceName(nh.face));
+    }
+    if (sent.length) n.log(`non-discovery ${I.name} → ${sent.join(', ')}`, 'I');
+  },
+  needPA(n, pit) {
+    const now = n.sim.now; let hasDisc = false, direct = true;
+    for (const [fid, r] of pit.in) {
+      if (r.expiry <= now) continue;
+      if (r.nonDisc === false) hasDisc = true;
+      if (!n.faceById.get(fid).local) direct = false;
+    }
+    return hasDisc && !direct;
+  },
+  afterReceiveData(n, D, inFace, pit) {
+    const o = pit.out.get(inFace.id);
+    if (!o) return;
+    if (o.nonDisc) {
+      if (!this.needPA(n, pit)) n.sendDataToAll(D, pit, inFace);
+      else {
+        n.setExpiry(pit, 1);
+        n.sim.after(0.0005, () => {
+          if (pit.dead) return;
+          if (!n.routes.some(r => r.prefix === n.sim.cfg.prefix && r.expires > n.sim.now)) return;
+          n.log(`attached prefix announcement ${n.sim.cfg.prefix} to ${D.name}`, 'D');
+          n.sendDataToAll(Object.assign({}, D, { pa: true }), pit, inFace);
+          n.setExpiry(pit, 0);
+        });
+      }
+    } else {
+      if (D.pa) { n.addRoute(n.sim.cfg.prefix, inFace.id, 'self-learning', P.sl.cost, n.sim.now + P.sl.route); n.log(`learned route ${n.sim.cfg.prefix} via ${n.faceName(inFace)} for 10 min`, 'D'); }
+      n.sendDataToAll(D, pit, inFace);
+    }
+  },
+  afterReceiveNack(n, N, inFace, pit) {
+    if (N.reason !== 'NoRoute') return;
+    n.sendNacks(pit, N.reason);
+    for (const r of n.routes) if (r.origin === 'self-learning' && r.faceId === inFace.id) r.expires = n.sim.now;
+    n.log(`route via ${n.faceName(inFace)} removed after Nack NoRoute`, 'N');
+  },
+});
+
+const STRATEGIES = { 'best-route': BestRoute, 'asf': ASF, 'multicast': Multicast, 'self-learning': SelfLearning };
+
+/* ======================================================================
+   Forwarder node (mirroring NFD daemon/fw/forwarder.cpp)
+   ====================================================================== */
+class Node {
+  constructor(sim, d) {
+    this.sim = sim; this.id = d.id; this.role = d.role || null;
+    this.faces = []; this.faceById = new Map(); this.routes = [];
+    this.pit = new Map(); this.cs = new Map(); this.dnl = new Map();
+    const c = sim.cfg.caching.get(this.id); this.caching = c === undefined ? true : c;
+    this.on = !sim.cfg.nodesOff.has(this.id);
+    this.c = { tx: 0, txT: { I: 0, D: 0, N: 0, H: 0, S: 0, L: 0 }, rx: 0, rxT: { I: 0, D: 0, N: 0, H: 0, S: 0, L: 0 },
+      lostTx: 0, over: 0, supp: 0, dupI: 0, dupD: 0, hits: 0 };
+    this.app = null; this.mcast = null; this.appFace = null; this.asf = null;
+  }
+  addFace(f) { f.id = 256 + this.faces.length; this.faces.push(f); this.faceById.set(f.id, f); return f; }
+  setup() {
+    if (this.sim.cfg.faces === 'mcast') this.mcast = this.addFace({ kind: 'mcast', linkType: 'adhoc', local: false });
+    else for (const [a, b] of LINK_DEFS) {
+      if (a === this.id) this.addFace({ kind: 'ucast', peer: b, linkType: 'p2p', local: false });
+      else if (b === this.id) this.addFace({ kind: 'ucast', peer: a, linkType: 'p2p', local: false });
+    }
+    if (this.role) this.appFace = this.addFace({ kind: 'app', linkType: 'p2p', local: true });
+  }
+  faceTo(peer) { return this.faces.find(f => f.kind === 'ucast' && f.peer === peer) || null; }
+  faceName(f) { return f.kind === 'ucast' ? f.peer : f.kind === 'mcast' ? 'multicast' : 'app'; }
+  faceUri(f) {
+    const L3 = this.sim.cfg.layer === 'L3';
+    if (f.kind === 'app') return 'unix:///run/nfd/nfd.sock';
+    if (f.kind === 'mcast') return L3 ? 'udp4://224.0.23.170:56363' : 'ether://[01:00:5e:00:17:aa]';
+    return L3 ? `udp4://${IP[f.peer]}:6363` : `ether://[${MAC[f.peer]}]`;
+  }
+  log(msg, cls) { this.sim.log(this.id, msg, cls); }
+
+  addRoute(prefix, faceId, origin, cost, expires) {
+    const before = this.fibD();
+    const r = this.routes.find(x => x.prefix === prefix && x.faceId === faceId && x.origin === origin);
+    if (r) { r.cost = cost; r.expires = expires; } else this.routes.push({ prefix, faceId, origin, cost, expires });
+    this.routesChanged(before);
+  }
+  setRoutes(origin, list) {
+    const before = this.fibD();
+    this.routes = this.routes.filter(r => r.origin !== origin);
+    for (const r of list) this.routes.push(Object.assign({ origin, prefix: this.sim.cfg.prefix, expires: Infinity }, r));
+    this.routesChanged(before);
+  }
+  removeRoute(faceId, origin) { this.routes = this.routes.filter(r => !(r.faceId === faceId && r.origin === origin)); }
+  fibD() { return this.fib(this.sim.cfg.prefix + '/'); }
+  // forwarder.cpp onNewNextHop: a new FIB next hop is offered to the strategy for every pending Interest under the prefix
+  routesChanged(before) {
+    const S = this.sim.strategy; if (!S || !S.afterNewNextHop) return;
+    const old = new Set(before.map(h => h.face.id)), added = this.fibD().filter(h => !old.has(h.face.id));
+    if (!added.length) return;
+    for (const pit of [...this.pit.values()]) if (!pit.dead) for (const nh of added) S.afterNewNextHop(this, nh, pit);
+  }
+  // RIB → FIB: lowest cost per face; ties by FaceId (NFD's std::sort leaves ties undefined)
+  fib(name) {
+    const pre = this.sim.cfg.prefix;
+    if (name !== pre && !name.startsWith(pre + '/')) return [];
+    const now = this.sim.now, best = new Map();
+    for (const r of this.routes) {
+      if (r.prefix !== pre || r.expires <= now) continue;
+      const c = best.get(r.faceId); if (c === undefined || r.cost < c) best.set(r.faceId, r.cost);
+    }
+    return [...best].map(([fid, cost]) => ({ face: this.faceById.get(fid), cost })).sort((a, b) => a.cost - b.cost || a.face.id - b.face.id);
+  }
+  // Operator actions (nfdc cs erase, nfdc route remove; emptying the PIT alone has no NFD command)
+  clearCs() { this.cs.clear(); }
+  resetPit() { for (const p of this.pit.values()) { p.dead = true; p.timer++; } this.pit.clear(); }
+  resetFib() { this.routes = this.routes.filter(r => r.origin === 'app'); }   // the local application keeps its own registration
+  resetAll() { this.clearCs(); this.resetPit(); this.resetFib(); this.dnl.clear(); this.asf = null; }
+  dnlHas(name, nonce) { const e = this.dnl.get(name + '|' + nonce); return e !== undefined && e > this.sim.now; }
+  dnlAdd(name, nonce) { this.dnl.set(name + '|' + nonce, this.sim.now + P.dnl); }
+
+  receive(pkt, kind, from) {
+    if (!this.on) return;
+    const face = kind === 'mcast' ? this.mcast : this.faceTo(from);
+    if (!face) return;
+    pkt = Object.assign({}, pkt);   // every receiver decodes its own copy of the frame
+    if (pkt.t === 'I') this.onInterest(face, pkt);
+    else if (pkt.t === 'D') this.onData(face, pkt);
+    else if (pkt.t === 'N') this.onNack(face, pkt);
+  }
+  csLookup(I) {
+    if (!this.caching) return null;
+    const e = this.cs.get(I.name);
+    if (!e) return null;
+    if (I.mustBeFresh && this.sim.now - e.t > e.D.fresh) return null;
+    this.cs.delete(I.name); this.cs.set(I.name, e);   // LRU: a hit makes the entry the most recent
+    return e.D;
+  }
+  onInterest(face, I) {
+    if (this.dnlHas(I.name, I.nonce)) return this.onLoop(face, I, 'Dead Nonce List');
+    let pit = this.pit.get(I.name);
+    if (!pit) { pit = { name: I.name, seg: I.seg, mbf: !!I.mustBeFresh, in: new Map(), out: new Map(), sat: false, timer: 0, rs: null, dead: false, fresh: Infinity }; this.pit.set(I.name, pit); }
+    let dnw = 0;
+    for (const [fid, r] of pit.in) if (r.nonce === I.nonce) dnw |= fid === face.id ? IN_SAME : IN_OTHER;
+    for (const [fid, r] of pit.out) if (r.nonce === I.nonce) dnw |= fid === face.id ? OUT_SAME : OUT_OTHER;
+    let dup = dnw !== 0;
+    if (face.linkType === 'p2p') dup = dup && !(dnw & IN_SAME);
+    if (dup) return this.onLoop(face, I, 'PIT');
+    if (pit.in.size === 0) { const D = this.csLookup(I); if (D) return this.onCsHit(face, I, pit, D); }
+    this.onCsMiss(face, I, pit);
+  }
+  onCsHit(face, I, pit, D) {
+    this.c.hits++; this.sim.st.hits[this.id] = (this.sim.st.hits[this.id] || 0) + 1;
+    this.sim.effect('hit', this.id);
+    this.log(`Content Store hit ${I.name}`, 'C');
+    pit.sat = true; pit.fresh = D.fresh; this.setExpiry(pit, 0);
+    this.sim.strategy.afterContentStoreHit(this, Object.assign({}, D, { origin: this.id, pa: false }), face, pit);
+  }
+  onCsMiss(face, I, pit) {
+    const now = this.sim.now;
+    let r = pit.in.get(face.id); if (!r) { r = {}; pit.in.set(face.id, r); }
+    r.nonce = I.nonce; r.expiry = now + I.lifetime; r.lastRenewed = now;
+    pit.I = I;
+    let maxExp = 0; for (const x of pit.in.values()) maxExp = Math.max(maxExp, x.expiry);
+    this.setExpiry(pit, maxExp - now);
+    this.sim.strategy.afterReceiveInterest(this, I, face, pit);
+  }
+  onLoop(face, I, where) {
+    this.c.dupI++; this.sim.st.dupI++;
+    this.sim.effect('dup', this.id);
+    if (face.linkType !== 'p2p') { this.log(`duplicate ${I.name} (nonce in ${where}) dropped`, 'U'); return; }
+    this.log(`duplicate ${I.name} on unicast face from ${this.faceName(face)} (nonce in ${where})`, 'U');
+    this.sim.strategy.onInterestLoop(this, I, face);
+  }
+  setExpiry(pit, dur) { const tok = ++pit.timer; this.sim.after(dur, () => { if (pit.timer === tok) this.finalize(pit); }); }
+  // forwarder.cpp onInterestFinalize + insertDeadNonceList
+  finalize(pit) {
+    const needDnl = !pit.sat || (pit.mbf && pit.fresh < P.dnl);
+    if (needDnl) for (const o of pit.out.values()) this.dnlAdd(pit.name, o.nonce);
+    if (this.pit.get(pit.name) === pit) this.pit.delete(pit.name);
+    pit.dead = true;
+  }
+  rejectPending(pit) { this.setExpiry(pit, 0); }
+  sendInterest(pit, face, I) {
+    const now = this.sim.now;
+    let o = pit.out.get(face.id); if (!o) { o = {}; pit.out.set(face.id, o); }
+    o.nonce = I.nonce; o.lastRenewed = now; o.expiry = now + I.lifetime; o.nack = null;
+    this.transmit(face, Object.assign({}, I));
+    return o;
+  }
+  onData(face, D) {
+    const pit = this.pit.get(D.name);
+    if (!pit || pit.dead) { this.c.dupD++; this.sim.st.dupD++; this.sim.effect('unsol', this.id); this.log(`unsolicited ${D.name} dropped`, 'U'); return; }
+    if (pit.sat) { this.c.dupD++; this.sim.st.dupD++; }
+    if (this.caching) {
+      this.cs.delete(D.name); this.cs.set(D.name, { D, t: this.sim.now });
+      if (this.cs.size > P.csMax) this.cs.delete(this.cs.keys().next().value);   // evict the least recently used
+    }
+    this.setExpiry(pit, 0);
+    this.sim.strategy.afterReceiveData(this, D, face, pit);
+    pit.sat = true; pit.fresh = D.fresh;
+    pit.out.delete(face.id);
+  }
+  sendData(D, face, pit) { if (pit) pit.in.delete(face.id); this.transmit(face, Object.assign({}, D)); }
+  sendDataToAll(D, pit, inFace) {
+    const now = this.sim.now, set = [];
+    for (const [fid, r] of pit.in) {
+      if (r.expiry <= now) continue;
+      if (fid === inFace.id && inFace.linkType !== 'adhoc') continue;
+      set.push(fid);
+    }
+    for (const fid of set) this.sendData(D, this.faceById.get(fid), pit);
+  }
+  onNack(face, N) {
+    if (face.linkType !== 'p2p') return;
+    const pit = this.pit.get(N.name); if (!pit) return;
+    const o = pit.out.get(face.id); if (!o || o.nonce !== N.nonce) return;
+    o.nack = N.reason;
+    this.log(`Nack ${N.reason} for ${N.name} from ${this.faceName(face)}`, 'N');
+    this.sim.strategy.afterReceiveNack(this, N, face, pit);
+  }
+  sendNack(pit, face, reason) {
+    if (face.linkType !== 'p2p') return;
+    const r = pit.in.get(face.id); if (!r) return;
+    pit.in.delete(face.id);
+    this.transmit(face, { t: 'N', name: pit.name, seg: pit.seg, nonce: r.nonce, reason: reason || 'NoRoute' });
+  }
+  sendNacks(pit, reason) { for (const fid of [...pit.in.keys()]) this.sendNack(pit, this.faceById.get(fid), reason); }
+  sendNackDirect(face, I, reason) { if (face.linkType === 'p2p') this.transmit(face, { t: 'N', name: I.name, seg: I.seg, nonce: I.nonce, reason }); }
+  transmit(face, pkt) {
+    if (face.kind === 'app') { this.sim.after(P.app, () => { if (this.app) this.app.receive(pkt); }); return; }
+    if (face.kind === 'mcast') this.sim.broadcast(this, pkt); else this.sim.unicast(this, face.peer, pkt);
+  }
+}
+
+/* ======================================================================
+   Applications
+   ====================================================================== */
+function makeInterest(sim, name, extra) {
+  return Object.assign({ t: 'I', name, seg: 0, nonce: sim.nonce(), lifetime: P.lifetime, nonDiscovery: false, mustBeFresh: false }, extra || {});
+}
+// Paced segment fetch: one Interest per second, retransmission with a new nonce after 1 s, at most 3 (study assumption)
+class PacedApp {
+  constructor(node, start) {
+    this.kind = 'paced'; this.node = node; node.app = this; this.recs = []; this.retx = 0; this.nacks = 0;
+    const sim = node.sim;
+    for (let k = 0; k < sim.cfg.count; k++) {
+      this.recs.push({ seg: k, state: 'wait', tries: 0, origin: null, t0: null, rtt: null });
+      sim.at(start + k / sim.cfg.rate, () => this.express(k, 0));
+    }
+  }
+  express(k, attempt) {
+    const sim = this.node.sim, rec = this.recs[k];
+    if (rec.state === 'done' || rec.state === 'lost') return;
+    if (attempt === 0) { rec.t0 = sim.now; rec.state = 'pending'; } else this.retx++;
+    rec.tries = attempt + 1;
+    const I = makeInterest(sim, sim.cfg.prefix + '/seg=' + k, { seg: k });
+    this.node.log(attempt ? `app retransmits ${I.name} (try ${attempt + 1})` : `app expresses ${I.name}`, 'I');
+    sim.after(P.app, () => this.node.onInterest(this.node.appFace, I));
+    sim.after(P.rto, () => {
+      if (rec.state !== 'pending') return;
+      if (attempt < P.maxRetx) this.express(k, attempt + 1);
+      else sim.after(P.lifetime - P.rto, () => { if (rec.state === 'pending') { rec.state = 'lost'; this.node.log(`gave up on ${I.name}`, 'X'); } });
+    });
+  }
+  receive(pkt) {
+    const rec = this.recs[pkt.seg]; if (!rec) return;
+    if (pkt.t === 'N') { this.nacks++; return; }
+    if (pkt.t !== 'D' || rec.state !== 'pending') return;
+    rec.state = 'done'; rec.origin = pkt.origin; rec.rtt = this.node.sim.now - rec.t0;
+    this.ideal = (this.ideal || 0) + this.node.sim.hopDist(this.node.id, pkt.origin);
+    const from = pkt.origin === 'p1' ? 'producer' : pkt.origin === this.node.id ? 'its own Content Store' : `cache at ${pkt.origin}`;
+    this.node.log(`app got ${pkt.name} from ${from} in ${ms(rec.rtt)}`, pkt.origin === 'p1' ? 'D' : 'C');
+  }
+  summary() {
+    const r = { kind: 'paced', total: this.recs.length, req: 0, prod: 0, cache: 0, lost: 0, pending: 0, byNode: {}, rtt: [], retx: this.retx, nacks: this.nacks };
+    for (const x of this.recs) {
+      if (x.state === 'wait') continue; r.req++;
+      if (x.state === 'pending') r.pending++;
+      else if (x.state === 'lost') r.lost++;
+      else { if (x.origin === 'p1') r.prod++; else { r.cache++; r.byNode[x.origin] = (r.byNode[x.origin] || 0) + 1; } r.rtt.push(x.rtt); }
+    }
+    return r;
+  }
+}
+// ndnping: one ping per second, unique name, MustBeFresh, timeout 4 s, no retransmission (ndn-tools ping)
+class PingApp {
+  constructor(node, start) {
+    this.kind = 'ping'; this.node = node; node.app = this; this.recs = []; this.nacks = 0; this.byName = new Map();
+    const sim = node.sim; this.base = Math.floor(sim.rand() * 1e9);
+    for (let k = 0; k < sim.cfg.count; k++) {
+      const rec = { seg: k, state: 'wait', t0: null, rtt: null, origin: null, tries: 1 };
+      this.recs.push(rec); this.byName.set(sim.cfg.prefix + '/ping/' + (this.base + k), rec);
+      sim.at(start + k / sim.cfg.rate, () => this.ping(k));
+    }
+  }
+  ping(k) {
+    const sim = this.node.sim, rec = this.recs[k];
+    rec.state = 'pending'; rec.t0 = sim.now;
+    const I = makeInterest(sim, sim.cfg.prefix + '/ping/' + (this.base + k), { seg: k, mustBeFresh: true, lifetime: P.ping.timeout });
+    this.node.log(`ping ${I.name}`, 'I');
+    sim.after(P.app, () => this.node.onInterest(this.node.appFace, I));
+    sim.after(P.ping.timeout, () => { if (rec.state === 'pending') { rec.state = 'lost'; this.node.log(`ping ${I.name} timed out`, 'X'); } });
+  }
+  receive(pkt) {
+    const rec = this.byName.get(pkt.name); if (!rec) return;
+    if (pkt.t === 'N') { this.nacks++; return; }
+    if (pkt.t !== 'D' || rec.state !== 'pending') return;
+    rec.state = 'done'; rec.origin = pkt.origin; rec.rtt = this.node.sim.now - rec.t0;
+    this.ideal = (this.ideal || 0) + this.node.sim.hopDist(this.node.id, pkt.origin);
+    this.node.log(`ping reply ${pkt.name} in ${ms(rec.rtt)}`, 'D');
+  }
+  summary() {
+    const r = { kind: 'ping', total: this.recs.length, sent: 0, recv: 0, lost: 0, pending: 0, rtt: [], nacks: this.nacks, prod: 0, cache: 0, byNode: {} };
+    for (const x of this.recs) {
+      if (x.state === 'wait') continue; r.sent++;
+      if (x.state === 'pending') r.pending++; else if (x.state === 'lost') r.lost++;
+      else { r.recv++; r.rtt.push(x.rtt); if (x.origin === 'p1') r.prod++; else { r.cache++; r.byNode[x.origin] = (r.byNode[x.origin] || 0) + 1; } }
+    }
+    return r;
+  }
+}
+// ndnget with its default CUBIC pipeline (ndn-tools get: pipeline-interests-cubic.cpp, pipeline-interests-adaptive.cpp)
+class TransferApp {
+  constructor(node, start) {
+    this.kind = 'transfer'; this.node = node; node.app = this;
+    const sim = node.sim, N = sim.cfg.count;
+    this.N = N; this.segs = []; for (let k = 0; k < N; k++) this.segs.push({ state: 'new', retx: 0, sentAt: 0, tok: 0, origin: null });
+    this.cwnd = P.get.initCwnd; this.ssthresh = Infinity; this.wmax = 0; this.lastWmax = 0; this.lastDecrease = 0;
+    this.inFlight = 0; this.next = 0; this.retxQ = []; this.highData = -1; this.highInterest = -1; this.recPoint = -1;
+    this.srtt = null; this.rttvar = null; this.rto = P.get.initRto; this.received = 0; this.timeouts = 0; this.retx = 0; this.nacks = 0;
+    this.t0 = null; this.tEnd = null; this.failed = false; this.bins = []; this.byNode = {}; this.prod = 0; this.cache = 0;
+    this.fixed = sim.cfg.rate > 0 ? Math.round(sim.cfg.rate) : 0;   // ndnget --pipeline-type fixed --pipeline-size N
+    if (this.fixed) this.cwnd = this.fixed;
+    sim.at(start, () => { this.t0 = sim.now; this.lastDecrease = sim.now; this.node.log(`ndnget starts fetching ${sim.cfg.prefix}/file (${N} segments)`, 'I'); this.pump(); });
+  }
+  pump() {
+    while (!this.failed && this.inFlight < Math.floor(this.cwnd) && (this.retxQ.length || this.next < this.N)) this.send(this.retxQ.length ? this.retxQ.shift() : this.next++);
+  }
+  send(k) {
+    const sim = this.node.sim, s = this.segs[k];
+    s.state = 'inflight'; s.sentAt = sim.now; this.inFlight++; this.highInterest = Math.max(this.highInterest, k);
+    const tok = ++s.tok, I = makeInterest(sim, sim.cfg.prefix + '/file/seg=' + k, { seg: k });
+    sim.after(P.app, () => this.node.onInterest(this.node.appFace, I));
+    sim.after(this.fixed ? P.lifetime : this.rto, () => { if (s.tok === tok && s.state === 'inflight') this.onTimeout(k); });
+  }
+  onTimeout(k) {
+    const s = this.segs[k];
+    s.state = 'retxq'; this.inFlight--; this.timeouts++;
+    if (!this.fixed) {
+      if (this.highData > this.recPoint) { this.recPoint = this.highInterest; this.decrease(); }   // conservative window adaptation
+      this.rto = Math.min(P.get.maxRto, this.rto * 2);
+    }
+    s.retx++; this.retx++;
+    if (s.retx > P.get.retries) { this.failed = true; this.node.log(`ndnget gave up on segment ${k}`, 'X'); return; }
+    this.retxQ.push(k);
+    this.node.log(`ndnget timeout on segment ${k}, cwnd ${this.cwnd.toFixed(1)}`, 'X');
+    this.pump();
+  }
+  receive(pkt) {
+    if (pkt.t === 'N') { this.nacks++; return; }
+    if (pkt.t !== 'D') return;
+    const k = pkt.seg, s = this.segs[k], sim = this.node.sim;
+    if (!s || s.state === 'done') return;
+    if (s.state === 'inflight') this.inFlight--;
+    else if (s.state === 'retxq') this.retxQ = this.retxQ.filter(x => x !== k);
+    if (s.retx === 0) {
+      const rtt = sim.now - s.sentAt;
+      if (this.srtt == null) { this.srtt = rtt; this.rttvar = rtt / 2; }
+      else { this.rttvar = 0.75 * this.rttvar + 0.25 * Math.abs(this.srtt - rtt); this.srtt = 0.875 * this.srtt + 0.125 * rtt; }
+      this.rto = Math.min(P.get.maxRto, Math.max(P.get.minRto, this.srtt + P.get.k * this.rttvar));
+    }
+    s.state = 'done'; s.origin = pkt.origin; this.received++;
+    this.ideal = (this.ideal || 0) + sim.hopDist(this.node.id, pkt.origin);
+    if (pkt.origin === 'p1') this.prod++; else { this.cache++; this.byNode[pkt.origin] = (this.byNode[pkt.origin] || 0) + 1; }
+    const b = Math.floor(sim.now / CHART_BIN); this.bins[b] = (this.bins[b] || 0) + 1;
+    this.highData = Math.max(this.highData, k);
+    this.increase();
+    if (this.received === this.N) { this.tEnd = sim.now; this.node.log(`ndnget finished in ${(this.tEnd - this.t0).toFixed(2)} s`, 'D'); return; }
+    this.pump();
+  }
+  increase() {
+    if (this.fixed) return;
+    if (this.cwnd < this.ssthresh) { this.cwnd += 1; return; }
+    if (this.wmax < P.get.initCwnd) this.wmax = this.cwnd;
+    const t = this.node.sim.now - this.lastDecrease, k = Math.cbrt(this.wmax * (1 - P.get.beta) / P.get.C);
+    const wCubic = P.get.C * Math.pow(t - k, 3) + this.wmax;
+    const wEst = this.wmax * P.get.beta + (3 * (1 - P.get.beta) / (1 + P.get.beta)) * (t / (this.srtt || 0.01));
+    this.cwnd += Math.max(0, Math.max(wCubic, wEst) - this.cwnd) / this.cwnd;
+  }
+  decrease() {
+    this.lastWmax = this.cwnd; this.wmax = this.cwnd;
+    this.ssthresh = Math.max(P.get.initCwnd, this.cwnd * P.get.beta); this.cwnd = this.ssthresh;
+    this.lastDecrease = this.node.sim.now;
+  }
+  summary() {
+    const now = this.node.sim.now, dur = (this.tEnd || now) - (this.t0 == null ? now : this.t0);
+    return { kind: 'transfer', total: this.N, recv: this.received, prod: this.prod, cache: this.cache, byNode: this.byNode, retx: this.retx, timeouts: this.timeouts,
+      nacks: this.nacks, cwnd: this.cwnd, done: this.tEnd != null, failed: this.failed, dur,
+      goodput: dur > 0 ? this.received * P.get.payload * 8 / dur / 1e6 : 0, lost: this.failed ? this.N - this.received : 0, pending: this.N - this.received };
+  }
+}
+// The producer registers the data prefix at its start time; disconnecting it unregisters the prefix, as stopping
+// the application does in NFD (the application face closes and its routes go away)
+class ProducerApp {
+  constructor(node) {
+    this.node = node; node.app = this; this.served = 0; this.on = false;
+    const c = node.sim.cfg.prod;
+    if (c.on) node.sim.at(c.start, () => { if (node.sim.cfg.prod.on) this.setOn(true); });
+  }
+  setOn(on) {
+    if (on === this.on) return;
+    this.on = on;
+    const n = this.node, pre = n.sim.cfg.prefix;
+    if (on) { n.addRoute(pre, n.appFace.id, 'app', 0, Infinity); n.log(`producer serves ${pre}`, 'D'); }
+    else { n.routes = n.routes.filter(r => r.origin !== 'app'); n.log(`producer disconnected, ${pre} unregistered`, 'X'); }
+    n.sim.ver++;
+  }
+  receive(pkt) {
+    if (pkt.t !== 'I' || !this.on) return;
+    this.served++;
+    const ping = pkt.name.startsWith(this.node.sim.cfg.prefix + '/ping/');
+    const D = { t: 'D', name: pkt.name, seg: pkt.seg, origin: 'p1', pa: false, bytes: ping ? P.size.Dping : P.size.D, fresh: ping ? P.ping.freshness : 10 };
+    this.node.sim.after(P.app, () => this.node.onData(this.node.appFace, D));
+  }
+}
+const APPS = { paced: PacedApp, ping: PingApp, transfer: TransferApp };
+
+/* ======================================================================
+   Routing: link-state costs and NLSR (hello, PSync sync, LSA fetch, routing calculation)
+   ====================================================================== */
+function routesFor(sim, v, isUp) {
+  // NLSR multipath: per neighbour, link cost plus the cheapest path from it to p1 avoiding v; best 3
+  const node = sim.nodes.get(v), out = [];
+  for (const f of node.faces) {
+    if (f.kind !== 'ucast' || !isUp(v, f.peer)) continue;
+    const d = pathCost(sim, f.peer, 'p1', v, isUp);
+    if (d < Infinity) out.push({ faceId: f.id, cost: sim.linkMap.get(linkId(v, f.peer)).cost + d });
+  }
+  out.sort((a, b) => a.cost - b.cost || a.faceId - b.faceId);
+  return out.slice(0, P.nlsr.maxFaces);
+}
+function pathCost(sim, src, dst, avoid, isUp) {
+  const dist = new Map([[src, 0]]), done = new Set([avoid]);
+  for (;;) {
+    let u = null, du = Infinity;
+    for (const [k, d] of dist) if (!done.has(k) && d < du) { u = k; du = d; }
+    if (u === null) return Infinity;
+    if (u === dst) return du;
+    done.add(u);
+    for (const l of sim.links) {
+      const w = l.a === u ? l.b : l.b === u ? l.a : null;
+      if (!w || done.has(w) || !isUp(u, w)) continue;
+      if (du + l.cost < (dist.has(w) ? dist.get(w) : Infinity)) dist.set(w, du + l.cost);
+    }
+  }
+}
+
+class Nlsr {
+  constructor(sim) {
+    this.sim = sim; this.adj = new Map(); this.cnt = new Map(); this.db = new Map();
+    this.adjPending = new Set(); this.calcPending = new Set(); this.fetching = new Set();
+    for (const n of sim.nodes.values()) for (const f of n.faces) if (f.kind === 'ucast') {
+      const l = sim.linkMap.get(linkId(n.id, f.peer));
+      this.adj.set(n.id + '>' + f.peer, l.on ? 'ACTIVE' : 'INACTIVE'); this.cnt.set(n.id + '>' + f.peer, 0);
+    }
+    // converged at t = 0: every router holds every adjacency LSA (sequence 1)
+    const init = new Map(); for (const n of sim.nodes.keys()) init.set(n, this.activeOf(n));
+    for (const n of sim.nodes.keys()) { const m = new Map(); for (const [o, a] of init) m.set(o, { seq: 1, adj: new Set(a) }); this.db.set(n, m); }
+    this.installed = new Map();
+    for (const n of sim.nodes.values()) if (n.id !== 'p1') this.install(n.id, routesFor(sim, n.id, this.view(n.id)));
+    // NLSR re-registers its routes every 2 x lsa-refresh-time (fib.cpp:40, 297-311)
+    for (const v of sim.nodes.keys()) if (v !== 'p1') sim.at(2 * P.nlsr.refresh, () => this.fibRefresh(v));
+    for (const k of this.adj.keys()) { const [v, u] = k.split('>'); sim.at(sim.rand() * P.nlsr.hello, () => this.helloRound(v, u)); }
+    for (const v of sim.nodes.keys()) {
+      sim.at(sim.rand() * P.nlsr.sync, () => this.syncRound(v));
+      sim.at(sim.rand() * P.nlsr.refresh, () => this.refreshRound(v));
+    }
+  }
+  install(w, list) { this.installed.set(w, list); this.sim.nodes.get(w).setRoutes('nlsr', list); }
+  fibRefresh(w) { this.sim.nodes.get(w).setRoutes('nlsr', this.installed.get(w) || []); this.sim.after(2 * P.nlsr.refresh, () => this.fibRefresh(w)); }
+  neighbours(v) { return this.sim.nodes.get(v).faces.filter(f => f.kind === 'ucast').map(f => f.peer); }
+  activeOf(v) { const s = new Set(); for (const [k, st] of this.adj) { const [a, b] = k.split('>'); if (a === v && st === 'ACTIVE') s.add(b); } return s; }
+  view(w) { const db = this.db.get(w); return (a, b) => !!(db.get(a) && db.get(a).adj.has(b) && db.get(b) && db.get(b).adj.has(a)); }
+  seq(w, o) { const e = this.db.get(w).get(o); return e ? e.seq : 0; }
+  newerThan(x, w) { for (const [o, e] of this.db.get(x)) if (e.seq > this.seq(w, o)) return true; return false; }
+  jitter() { return P.nlsr.jitterMin + this.sim.rand() * (P.nlsr.jitterMax - P.nlsr.jitterMin); }
+  send(from, to, t, kind, onRx) { this.sim.unicast(this.sim.nodes.get(from), to, { t, kind, name: `${t}:${kind}`, bytes: P.size[t + (kind === 'req' ? 'req' : 'rep')] }, onRx); }
+
+  // Hello protocol (hello-protocol.cpp): every 60 s per neighbour, timeout 1 s, 3 attempts in total
+  helloRound(v, u) { this.hello(v, u); this.sim.after(P.nlsr.hello, () => this.helloRound(v, u)); }
+  hello(v, u) {
+    const sim = this.sim, key = v + '>' + u; let closed = false;
+    this.send(v, u, 'H', 'req', () => this.send(u, v, 'H', 'rep', () => {
+      if (closed) return; closed = true; this.cnt.set(key, 0);
+      if (this.adj.get(key) === 'INACTIVE') { this.adj.set(key, 'ACTIVE'); sim.log(v, `NLSR neighbour ${u} ACTIVE`, 'H'); this.scheduleAdj(v); }
+    }));
+    sim.after(P.nlsr.timeout, () => {
+      if (closed) return; closed = true;
+      const c = this.cnt.get(key) + 1; this.cnt.set(key, c);
+      if (c < P.nlsr.tries) { sim.log(v, `NLSR hello to ${u} timed out (${c}), resending`, 'H'); this.hello(v, u); }
+      else if (this.adj.get(key) === 'ACTIVE') { this.adj.set(key, 'INACTIVE'); sim.log(v, `NLSR neighbour ${u} INACTIVE`, 'X'); this.scheduleAdj(v); }
+    });
+  }
+  // Adjacency LSA built 10 s after a change, then announced through PSync
+  scheduleAdj(v) {
+    if (this.adjPending.has(v)) return; this.adjPending.add(v);
+    this.sim.after(P.nlsr.adjBuild, () => { this.adjPending.delete(v); this.publish(v, this.activeOf(v), 'built a new adjacency LSA'); });
+  }
+  refreshRound(v) { this.publish(v, this.db.get(v).get(v).adj, 'refreshed its adjacency LSA'); this.sim.after(P.nlsr.refresh, () => this.refreshRound(v)); }
+  publish(v, adjSet, why) {
+    const e = this.db.get(v).get(v); e.seq++; e.adj = new Set(adjSet);
+    this.sim.log(v, `NLSR ${why} (sequence ${e.seq})`, 'H');
+    this.scheduleCalc(v); this.notify(v);
+  }
+  // PSync: answer the neighbours' pending sync Interests when this router knows newer LSAs
+  notify(x) { for (const w of this.neighbours(x)) if (this.newerThan(x, w)) this.send(x, w, 'S', 'rep', () => this.onSyncData(w, x)); }
+  onSyncData(w, x) {
+    for (const [o, e] of this.db.get(x)) if (e.seq > this.seq(w, o)) this.fetchLsa(w, o, e.seq);
+    this.sim.after(this.jitter(), () => this.syncInterest(w));
+  }
+  // LSA fetch: the multicast strategy on the /localhop LSA prefix sends the Interest to every neighbour (nlsr.cpp:88)
+  fetchLsa(w, o, want) {
+    const key = w + '|' + o + '|' + want; if (this.fetching.has(key)) return; this.fetching.add(key);
+    this.sim.after(P.nlsr.lsaLifetime, () => this.fetching.delete(key));
+    for (const z of this.neighbours(w)) this.send(w, z, 'L', 'req', () => {
+      const e = this.db.get(z).get(o);
+      if (e && e.seq >= want) { const copy = { seq: e.seq, adj: new Set(e.adj) }; this.send(z, w, 'L', 'rep', () => this.onLsa(w, o, copy)); }
+    });
+  }
+  onLsa(w, o, e) {
+    if (e.seq <= this.seq(w, o)) return;
+    this.db.get(w).set(o, e);
+    this.sim.log(w, `NLSR received LSA of ${o} (sequence ${e.seq})`, 'H');
+    this.scheduleCalc(w); this.notify(w);
+  }
+  syncRound(v) { this.syncInterest(v); this.sim.after(P.nlsr.sync + this.jitter(), () => this.syncRound(v)); }
+  syncInterest(x) { for (const z of this.neighbours(x)) this.send(x, z, 'S', 'req', () => { if (this.newerThan(z, x)) this.send(z, x, 'S', 'rep', () => this.onSyncData(x, z)); }); }
+  scheduleCalc(w) {
+    if (this.calcPending.has(w)) return; this.calcPending.add(w);
+    this.sim.after(P.nlsr.calc, () => {
+      this.calcPending.delete(w);
+      if (w === 'p1') return;
+      this.install(w, routesFor(this.sim, w, this.view(w)));
+      this.sim.log(w, 'NLSR recomputed its routing table', 'H');
+    });
+  }
+}
+
+/* ======================================================================
+   Simulation (shared radio medium, events, statistics)
+   ====================================================================== */
+class Sim {
+  constructor(cfg) {
+    this.cfg = cfg; this.rand = mulberry32((cfg.seed >>> 0) || 1); this.q = new Heap(); this.now = 0; this.mediumFree = 0;
+    this.frames = []; this.fx = []; this.logs = []; this.quiet = false; this.keepFrames = true; this.noLog = false;
+    this.st = { frames: { I: 0, D: 0, N: 0, H: 0, S: 0, L: 0 }, lost: 0, dead: 0, radioOff: 0, retries: 0, over: 0, dupI: 0, dupD: 0, hits: {}, airData: 0, airNlsr: 0 };
+    this.links = LINK_DEFS.map(([a, b]) => {
+      const id = linkId(a, b), s = cfg.links.get(id) || defaultLink(id);
+      return { id, a, b, on: s.on, loss: s.loss, cost: s.cost, frames: 0, diag: POS[a].x !== POS[b].x && POS[a].y !== POS[b].y };
+    });
+    this.linkMap = new Map(this.links.map(l => [l.id, l]));
+    this.nodes = new Map(); for (const d of NODE_DEFS) this.nodes.set(d.id, new Node(this, d));
+    for (const n of this.nodes.values()) n.setup();
+    this.strategy = STRATEGIES[cfg.strategy];
+    this.producer = new ProducerApp(this.nodes.get('p1'));
+    const App = APPS[cfg.app] || PacedApp;
+    this.consumers = {};
+    for (const c of CONSUMERS) if (cfg.cons[c].on) this.consumers[c] = new App(this.nodes.get(c), cfg.cons[c].start);
+    this.ver = 0;
+    if (cfg.routing === 'static') this.installStatic();
+    this.nlsr = cfg.routing === 'nlsr' && cfg.faces === 'ucast' ? new Nlsr(this) : null;
+    for (const id of cfg.flaps.keys()) this.scheduleFlap(id);
+    for (const e of cfg.events || []) this.at(e.t, () => this.applyEvent(e));
+    const purge = () => { for (const n of this.nodes.values()) for (const [k, v] of n.dnl) if (v <= this.now) n.dnl.delete(k); this.after(60, purge); };
+    this.after(60, purge);   // drop expired Dead Nonce List entries so long runs stay light
+  }
+  installStatic() {
+    if (this.cfg.faces === 'ucast') {
+      const inRange = new Set(this.links.filter(l => l.on).map(l => l.id)), isUp = (a, b) => inRange.has(linkId(a, b));
+      for (const n of this.nodes.values()) if (n.id !== 'p1') n.setRoutes('static', routesFor(this, n.id, isUp));
+    } else for (const n of this.nodes.values()) if (n.id !== 'p1') n.setRoutes('static', [{ faceId: n.mcast.id, cost: 10 }]);
+  }
+  applyEvent(e) {
+    e.done = true;
+    if (e.cut || e.restore) { const l = this.linkMap.get(e.cut || e.restore); l.on = !!e.restore; this.log(l.a, `scripted: link ${l.a}–${l.b} ${l.on ? 'back in range' : 'out of range'}`, l.on ? 'U' : 'X'); }
+    if (e.loss) { const l = this.linkMap.get(e.loss); l.loss = e.value; this.log(l.a, `scripted: link ${l.a}–${l.b} loss ${Math.round(e.value * 100)}%`, 'X'); }
+    if (e.nocache) { this.nodes.get(e.nocache).caching = false; this.log(e.nocache, 'scripted: caching off', 'X'); }
+    this.ver++;
+  }
+  scheduleFlap(id) {
+    this.flapGen = this.flapGen || {};
+    const gen = this.flapGen[id] = (this.flapGen[id] || 0) + 1;
+    const tick = () => {
+      if (!this.cfg.flaps.has(id) || this.flapGen[id] !== gen) return;
+      const l = this.linkMap.get(id); l.on = !l.on; this.ver++;
+      this.log(l.a, `link ${l.a}–${l.b} ${l.on ? 'back in range' : 'out of range'} (flips every ${this.cfg.flaps.get(id)} s)`, l.on ? 'U' : 'X');
+      this.after(this.cfg.flaps.get(id), tick);
+    };
+    this.after(this.cfg.flaps.get(id), tick);
+  }
+  at(t, fn) { this.q.push(t, fn); }
+  after(dt, fn) { this.q.push(this.now + dt, fn); }
+  nonce() { return Math.floor(this.rand() * 4294967296); }
+  nextTime() { return this.q.peek(); }
+  runUntil(t) {
+    let guard = 0;
+    while (this.q.peek() <= t && guard++ < 2000000) { const e = this.q.pop(); this.now = e.t; e.fn(); }
+    if (t > this.now && t !== Infinity) this.now = t;
+  }
+  log(node, msg, cls) {
+    if (this.noLog) return;
+    this.logs.push({ t: this.now, node, msg, cls: cls || 'U' });
+    if (this.logs.length > 3000) this.logs.splice(0, this.logs.length - 2000);
+  }
+  effect(type, node) { if (!this.quiet) this.fx.push({ type, node, wall: performance.now() }); }
+  // A link carries frames when it is in range and both radios are on
+  usable(l) { return l.on && this.nodes.get(l.a).on && this.nodes.get(l.b).on; }
+  inRange(id) {
+    const out = [];
+    for (const l of this.links) if ((l.a === id || l.b === id) && this.usable(l)) out.push({ l, to: l.a === id ? l.b : l.a });
+    return out;
+  }
+  used(l, from, pkt) { if ('IDN'.includes(pkt.t)) { l.lastUse = this.now; (l.useFrom || (l.useFrom = {}))[from] = this.now; } }
+  sent(from, pkt) { from.c.tx++; from.c.txT[pkt.t]++; this.st.frames[pkt.t]++; }
+  deliver(toId, t, fn) { const n = this.nodes.get(toId); if (!n.on) return; n.c.rx++; n.c.rxT[t]++; fn(); }
+  // Hop count over the links in range now (for the minimum Interest frames a delivered Data needed)
+  hopDist(a, b) {
+    if (a === b) return 0;
+    const seen = new Set([a]); let fr = [a], d = 0;
+    while (fr.length) { d++; const nx = []; for (const u of fr) for (const { to } of this.inRange(u)) { if (to === b) return d; if (!seen.has(to)) { seen.add(to); nx.push(to); } } fr = nx; }
+    return 0;
+  }
+  frameBytes(pkt) { return (pkt.bytes || P.size[pkt.t]) + P.radio.macHdr + (this.cfg.layer === 'L3' ? P.radio.ipUdp : 0); }
+  // One shared medium, as in wmediumd: a frame waits for every queued frame of every station on the medium (wmediumd.c:693-716)
+  airtime(pkt, us) {
+    const t0 = Math.max(this.now, this.mediumFree);
+    this.mediumFree = t0 + us * 1e-6;
+    if ('HSL'.includes(pkt.t)) this.st.airNlsr += us; else this.st.airData += us;
+    return { t0, t1: this.mediumFree + P.proc };
+  }
+  record(f) { if (this.keepFrames) this.frames.push(f); }
+  broadcast(from, pkt) {
+    if (!from.on) { this.st.radioOff++; return; }   // radio off: the frame never leaves the node
+    const { t0, t1 } = this.airtime(pkt, txTimeUs(this.frameBytes(pkt), 1, true, true)), rx = [];
+    for (const { l, to } of this.inRange(from.id)) {
+      const ok = this.rand() >= l.loss; l.frames++; this.used(l, from.id, pkt);
+      rx.push({ to, st: ok ? 'rx' : 'lost' });
+      if (ok) this.at(t1, () => this.deliver(to, pkt.t, () => this.nodes.get(to).receive(pkt, 'mcast', from.id))); else { this.st.lost++; from.c.lostTx++; }
+    }
+    this.sent(from, pkt);
+    this.record({ t0, t1, from: from.id, pkt, rx, bc: true, tries: 1 });
+  }
+  unicast(from, toId, pkt, onRx) {
+    if (!from.on) { this.st.radioOff++; return; }   // radio off: the frame never leaves the node
+    const l = this.linkMap.get(linkId(from.id, toId)), usable = !!(l && this.usable(l));
+    if (l) { l.frames++; this.used(l, from.id, pkt); }
+    // All tries of a frame share its fade (FACTS.md, task 4.5): the frame is lost with the link's loss rate
+    const ok = usable && this.rand() >= l.loss, tries = ok ? 1 : P.radio.tries;
+    const { t0, t1 } = this.airtime(pkt, txTimeUs(this.frameBytes(pkt), tries, ok, false));
+    this.st.retries += tries - 1;
+    const rx = [{ to: toId, st: ok ? 'rx' : usable ? 'lost' : 'dead' }];
+    for (const { to } of this.inRange(from.id)) if (to !== toId) { rx.push({ to, st: 'over' }); this.st.over++; this.nodes.get(to).c.over++; }
+    if (ok) this.at(t1, () => this.deliver(toId, pkt.t, () => (onRx ? onRx() : this.nodes.get(toId).receive(pkt, 'ucast', from.id))));
+    else { if (usable) this.st.lost++; else this.st.dead++; from.c.lostTx++; }
+    this.sent(from, pkt);
+    this.record({ t0, t1, from: from.id, pkt, rx, bc: false, tries });
+  }
+  inFlight() { for (const f of this.frames) if (f.t1 > this.now) return true; return false; }
+  retire() {
+    const now = this.now, keep = [];
+    for (const f of this.frames) {
+      if (f.t1 > now) { keep.push(f); continue; }
+      if (this.quiet) continue;
+      for (const r of f.rx) if (r.st === 'lost' || r.st === 'dead') {
+        const A = POS[f.from], B = POS[r.to];
+        this.fx.push({ type: 'x', x: A.x + (B.x - A.x) * 0.55, y: A.y + (B.y - A.y) * 0.55, wall: performance.now() });
+      }
+    }
+    this.frames = keep;
+  }
+}
+
+/* ======================================================================
+   Profiles (scenario + timed events). The "why" texts were written after measuring each profile.
+   ====================================================================== */
+const PROFILES = [
+  { id: 'reference', name: 'Reference without failures', strategy: 'best-route', base: 'static', app: 'paced', count: 30, c2Delay: 0.3, all: true,
+    script: 'No failures. Every strategy runs the same traffic.',
+    watch: 'Compare how many frames each strategy needs for the same 30 segments per consumer (Transmission efficiency panel), and where c2 is served from.',
+    why: 'No failure: the cost of each strategy for the same traffic. best-route and ASF send one copy per hop. multicast sends a copy to up to three next hops at every node, about four times the frames. self-learning floods its first Interest and keeps flooding for c2, which is served by m3\'s cache and so never learns a route (see "Self-learning: caches hide the route").' },
+  { id: 'br-blind', name: 'Best-route: blind to a broken link', strategy: 'best-route', base: 'static', app: 'paced', count: 120, c2Delay: 2,
+    events: [{ t: 10.2, cut: 'm2-m3' }],
+    script: 'm2–m3 goes out of range at 10.2 s. c2 starts 2 s after c1.',
+    watch: 'After the cut, watch m3: every new Interest still goes to m2 first, and the cost near m3 toward m2 stays 30. Only the consumer\'s retransmission one second later is sent to the next face.',
+    why: 'Every new Interest still follows the cheapest route into the broken link; a wireless timeout gives no feedback. Only c1\'s retransmission one second later takes the next face (n3), so every segment after the cut costs two tries and about one second. With static routes this never ends. With NLSR it ends once 3 hellos are missed and the routes are rebuilt (33 s after the cut with seed 7, at most about 88 s), while NLSR adds its own frames. c2 happens to need only one try: m3 still holds c1\'s pending Interest for the same segment, treats c2\'s Interest as a retransmission of it and sends it to n3, which answers from the copy c1\'s retransmission left there.' },
+  { id: 'br-lossy', name: 'Best-route: a lossy link costs the same', strategy: 'best-route', base: 'static', app: 'paced', count: 60, c2Delay: 2,
+    links: { 'm2-m3': { loss: 0.3 } },
+    script: 'm2–m3 loses 30% of its frames for the whole run.',
+    watch: 'Watch c1\'s timeline: segments needing a second try keep appearing. The cost near m3 toward m2 stays 30 although the link loses frames, so m3 never stops using m2.',
+    why: 'Routes follow the configured link cost, and loss never changes it (NLSR\'s link-cost is configuration, not a measurement). best-route keeps every Interest on the lossy link. An exchange crosses it twice, so about four in ten of c1\'s segments need a second try, for the whole run, with or without NLSR. c2 is served by m3\'s cache.' },
+  { id: 'asf-return', name: 'ASF: no way back after a repair', strategy: 'asf', base: 'static', app: 'paced', count: 150, c2Delay: 2,
+    events: [{ t: 10.2, cut: 'm2-m3' }, { t: 40.2, restore: 'm2-m3' }],
+    script: 'm2–m3 out of range from 10.2 s to 40.2 s. c2 starts 2 s after c1.',
+    watch: 'Watch the costs near m3 and c1: the face toward m2 shows t/o after the cut, and after the repair the detour through n3 keeps the lower RTT, so the shorter path is not used again.',
+    why: 'ASF reacts: after a few timeouts c1 and m3 move to the detour through n3 (one hop longer), with only three retransmissions. After the repair, m3 only measures m2 again with its next probe (every 60 s). Even then it keeps n3: n3 answers from the copies c1 left in its cache, so its measured RTT looks better. c1 stays on the 5-hop detour for the rest of the run. ASF ranks by measured RTT and probes rarely, so it cannot tell a cached answer from a better path.' },
+  { id: 'asf-lossy', name: 'ASF: oscillation on a lossy link', strategy: 'asf', base: 'static', app: 'paced', count: 120, c2Delay: 2,
+    links: { 'm2-m3': { loss: 0.3 } },
+    script: 'm2–m3 loses 30% of its frames for the whole run.',
+    watch: 'Watch the cost near m3 toward m2: it switches between an RTT and t/o until ASF settles on n3.',
+    why: 'Each Data that gets through resets the timeout count, so the lossy face counts as working until 3 timeouts come in a row. m3 alternates between m2 and n3 for about 20 s, with retransmissions each time it returns to m2. Then it marks m2 timed out and stays on n3, one hop longer; probes every 60 s try m2 again. Compared with best-route on the same link, it loses less but pays with a longer path and with flapping.' },
+  { id: 'mc-cost', name: 'Multicast: robust but expensive', strategy: 'multicast', base: 'static', app: 'paced', count: 120, c2Delay: 2,
+    events: [{ t: 10.2, cut: 'm2-m3' }],
+    script: 'm2–m3 goes out of range at 10.2 s. c2 starts 2 s after c1.',
+    watch: 'Compare the Transmission efficiency panel with "Best-route: blind to a broken link" under the same cut: extra Interests and duplicates at every node.',
+    why: 'No segment is lost or retransmitted after the cut, because a copy already travels over every next hop. The price is about three times the frames of best-route on the same traffic, and over a thousand duplicate Interests dropped along the way. On a shared radio medium every extra copy takes air time from everyone.' },
+  { id: 'sl-stale', name: 'Self-learning: stale learned route', strategy: 'self-learning', base: 'none', app: 'paced', count: 700, c2Delay: 2,
+    events: [{ t: 10.2, cut: 'm2-m3' }],
+    script: 'm2–m3 goes out of range at 10.2 s. Use Skip 10 min to reach the recovery.',
+    watch: 'After the cut, the learned route through m2 is kept: a timeout on a wireless link sends no Nack, so nothing removes it before it expires.',
+    why: 'Self-learning learns c1→m3→m2→m1→p1. After the cut the learned routes stay: only a NoRoute Nack removes a learned route early, and a broken wireless link produces only timeouts. c1 loses every segment until the routes expire 10 minutes after their last renewal; then discovery finds the path through n3. c2 keeps receiving: it never learned a route (it was served by caches), so it keeps flooding discovery, which finds the producer through s3. The strategy that learned is the one that gets stuck. With NLSR, self-learning skips discovery and copies every Interest to all three NLSR next hops at each node: nothing is lost, but it sends far more frames (in the reference profile 1440 against best-route\'s 300).' },
+  { id: 'sl-cache', name: 'Self-learning: caches hide the route', strategy: 'self-learning', base: 'none', app: 'paced', count: 30, c2Delay: 0.3,
+    script: 'No failures.',
+    watch: 'Select c2 in the inspector: its FIB stays empty, and each of its Interests is a discovery sent to every neighbour (c2\'s row in the efficiency table).',
+    why: 'c2 is always served by m3\'s cache. Data from a cache carries no prefix announcement (self-learning does not override the cache-hit step), so c2 never learns a route. Every one of its Interests is a discovery sent to both neighbours, and c2 sends twice the frames of c1 for the same segments.' },
+  { id: 'mcast-faces', name: 'All strategies on multicast-only faces', strategy: 'best-route', base: 'static', faces: 'mcast', app: 'paced', count: 30, c2Delay: 0.3, all: true, noNlsr: true,
+    script: 'The stock Mini-NDN Wi-Fi setup: one ad hoc multicast face per node, routes on it. No failures.',
+    watch: 'Switch the strategy: the counts do not change, because every strategy has only one face to choose.',
+    why: 'With one multicast face there is nothing to choose: every strategy broadcasts each Interest, every node rebroadcasts it once, and the counts are identical for all four. Each segment costs 22 broadcasts (11 Interest, 11 Data) and 22 duplicate Interests dropped. c2 is served by its own Content Store, because its node relayed c1\'s flooded Interest and cached the Data before c2 asked.' },
+  { id: 'cache-lifeline', name: 'Best-route: caching as the lifeline', strategy: 'best-route', base: 'static', app: 'paced', count: 20, c2Delay: 8,
+    events: [{ t: 10.2, cut: 'm1-p1' }, { t: 13.2, nocache: 'm3' }],
+    script: 'c2 starts 8 s after c1. p1–m1 goes out of range at 10.2 s; m3 turns its cache off at 13.2 s.',
+    watch: 'After the cut only c2 still receives segments, from caches: first m3, then m2 once m3\'s cache is off.',
+    why: 'After p1–m1 is cut the producer is unreachable, and p1–s1 is out of range, so no routing can help, with or without NLSR. c2 still receives the 10 segments c1 fetched before the cut: five from m3, then five from m2 once m3\'s cache is off. Every segment no cache holds is lost.' },
+  { id: 'transfer', name: 'File transfer: shared medium and caching', strategy: 'best-route', base: 'static', app: 'transfer', count: 300, c2Delay: 2,
+    script: 'c1 and c2 fetch the same 300 KB file with ndnget; c2 starts 2 s later.',
+    watch: 'Watch the throughput chart: all frames share one radio medium, and c2 is served by m3\'s cache.',
+    why: 'c1 is limited by the shared medium: each segment costs four Interest and four Data transmissions one after another, about 1.7 Mbit/s out of 12 Mbit/s. Slow start overshoots the medium\'s queue and causes timeouts although no link loses frames. c2 fetches the same file from m3\'s cache, one hop away, at about 8 Mbit/s.' },
+  { id: 'ping', name: 'Ping: latency per strategy', strategy: 'best-route', base: 'static', app: 'ping', count: 30, c2Delay: 0.3, all: true,
+    script: 'ndnping from c1 and c2, one ping per second. No failures.',
+    watch: 'Compare round-trip times. Pings have unique names and MustBeFresh, so no cache answers them.',
+    why: 'Without failures every strategy gives the same latency, about 6 ms over four hops; pings are never cached. multicast costs three times the frames for the same answers. With NLSR, every strategy also carries NLSR\'s hellos and sync traffic.' },
+];
+
+/* ======================================================================
+   UI state
+   ====================================================================== */
+function defaultCons(c2Delay) { return { c1: { on: true, start: P.start }, c2: { on: true, start: +(P.start + c2Delay).toFixed(2) } }; }
+const RATE_DEFAULT = { paced: 1, ping: 1, transfer: 0 };
+const UI = {
+  cfg: { strategy: 'best-route', layer: 'L2', faces: 'ucast', routing: 'static', app: 'paced', seed: 7, count: 30, rate: 1,
+         cons: defaultCons(0.3), prod: { on: true, start: 0 }, prefix: '/prod', links: new Map(), caching: new Map(), nodesOff: new Set(), flaps: new Map(), events: [] },
+  profile: null, speed: 1, running: false, turbo: false, sel: null, showRoutes: true, showOver: true, idle: 0, measured: {},
+  open: new Set(['fib', 'counters']), ver: -1, inspVer: -1, ffRate: 30, target: null, showCosts: true,
+  dashUnrouted: true, showPath: false, showRipple: true, showBadges: true, showLabels: true,
+};
+for (const [a, b] of LINK_DEFS) UI.cfg.links.set(linkId(a, b), defaultLink(linkId(a, b)));
+let sim = null;
+
+function cloneEvents(ev) { return (ev || []).map(e => Object.assign({}, e, { done: false })); }
+function rebuild() {
+  UI.cfg.events = cloneEvents(UI.cfg.events);
+  sim = new Sim(UI.cfg);
+  renderStatic(); renderInspector(true); renderReadouts(); renderEfficiency(); renderTimeline(); renderLog(); updateChips(); renderCaption(); renderProfiles();
+}
+function profileCfg(p, overrides) {
+  const links = new Map();
+  for (const [a, b] of LINK_DEFS) { const id = linkId(a, b); links.set(id, Object.assign(defaultLink(id), (p.links || {})[id] || {})); }
+  return Object.assign({ strategy: p.strategy, layer: UI.cfg.layer, faces: p.faces || 'ucast', routing: p.base, app: p.app, seed: UI.cfg.seed,
+    count: p.count, rate: p.rate == null ? RATE_DEFAULT[p.app] : p.rate, cons: defaultCons(p.c2Delay), links, caching: new Map(), nodesOff: new Set(),
+    flaps: new Map(), events: cloneEvents(p.events), prod: { on: true, start: 0 }, prefix: UI.cfg.prefix }, overrides || {});
+}
+function loadProfile(id) {
+  const p = PROFILES.find(x => x.id === id);
+  UI.profile = p ? p.id : null;
+  if (p) UI.cfg = profileCfg(p);
+  syncAll(); syncSliders(); rebuild();
+}
+
+/* ---------- Controls ---------- */
+const $ = id => document.getElementById(id);
+function segmented(el, options, get, set) {
+  el.innerHTML = options.map(o => `<button type="button" data-v="${esc(o.v)}" aria-pressed="false"${o.title ? ` title="${esc(o.title)}"` : ''}>${esc(o.label)}</button>`).join('');
+  el._sync = () => el.querySelectorAll('button').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.v === String(get())));
+    const o = options.find(x => x.v === b.dataset.v); b.disabled = !!(o.disabled && o.disabled());
+  });
+  el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; set(b.dataset.v); syncAll(); });
+  el._sync();
+}
+const syncers = [];
+function syncAll() { syncers.forEach(f => f()); }
+const COUNT_LABEL = { paced: ['Segments per consumer', 5, 3600, 1, v => v], ping: ['Pings per consumer', 5, 3600, 1, v => v], transfer: ['File size', 20, 2000, 20, v => v + ' KB'] };
+const RATE_LABEL = {
+  paced: ['Interests per second', 0.2, 20, 0.2, v => (+v).toFixed(1)],
+  ping: ['Pings per second (ndnping -i)', 0.2, 20, 0.2, v => (+v).toFixed(1)],
+  transfer: ['ndnget window', 0, 64, 1, v => (+v === 0 ? 'CUBIC (adaptive)' : 'fixed, ' + v + ' segments')],
+};
+function syncSliders() {
+  const [label, min, max, step, fmt] = COUNT_LABEL[UI.cfg.app];
+  const c = $('inCount'); c.min = min; c.max = max; c.step = step; c.value = UI.cfg.count;
+  $('lbCount').textContent = label; $('outCount').textContent = fmt(UI.cfg.count);
+  const [rl, rmin, rmax, rstep, rfmt] = RATE_LABEL[UI.cfg.app];
+  const r = $('inRate'); r.min = rmin; r.max = rmax; r.step = rstep; r.value = UI.cfg.rate;
+  $('lbRate').textContent = rl; $('outRate').textContent = rfmt(UI.cfg.rate);
+  for (const k of CONSUMERS) { const u = k.toUpperCase(); $('on' + u).checked = UI.cfg.cons[k].on; $('st' + u).value = UI.cfg.cons[k].start; }
+  $('onP1').checked = UI.cfg.prod.on; $('stP1').value = UI.cfg.prod.start; $('inPrefix').value = UI.cfg.prefix; $('lbPrefix').textContent = UI.cfg.prefix;
+  $('inSeed').value = UI.cfg.seed;
+}
+
+function initControls() {
+  const sel = $('selProfile');
+  sel.innerHTML = '<option value="">Manual (your own settings)</option>' + PROFILES.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  sel.addEventListener('change', () => loadProfile(sel.value));
+  syncers.push(() => { sel.value = UI.profile || ''; });
+
+  const scen = (key, el, opts) => {
+    segmented($(el), opts, () => UI.cfg[key], v => {
+      UI.cfg[key] = v;
+      if (key === 'faces' && v === 'mcast' && UI.cfg.routing === 'nlsr') UI.cfg.routing = 'static';
+      if (key === 'app') { UI.cfg.count = { paced: 30, ping: 30, transfer: 300 }[v]; UI.cfg.rate = RATE_DEFAULT[v]; syncSliders(); }
+      rebuild();
+    });
+    syncers.push($(el)._sync);
+  };
+  scen('strategy', 'segStrategy', [{ v: 'best-route', label: 'best-route' }, { v: 'asf', label: 'ASF' }, { v: 'multicast', label: 'multicast' }, { v: 'self-learning', label: 'self-learning' }]);
+  scen('layer', 'segLayer', [{ v: 'L2', label: 'L2 Ethernet' }, { v: 'L3', label: 'L3 UDP' }]);
+  scen('faces', 'segFaces', [{ v: 'ucast', label: 'Unicast only' }, { v: 'mcast', label: 'Multicast only (stock Mini-NDN)' }]);
+  scen('routing', 'segRouting', [{ v: 'static', label: 'Static' }, { v: 'nlsr', label: 'NLSR', disabled: () => UI.cfg.faces === 'mcast', title: 'NLSR needs a unicast face per neighbour' }, { v: 'none', label: 'None' }]);
+  scen('app', 'segApp', [{ v: 'paced', label: 'Segments' }, { v: 'ping', label: 'Ping' }, { v: 'transfer', label: 'File transfer' }]);
+  syncers.push(() => { $('routingHint').textContent = routingHint(); });
+
+  segmented($('segFF'), FF_RATES.map(r => ({ v: String(r), label: r + ' s/s', title: `Fast-forward runs ${r} simulated seconds per second` })), () => String(UI.ffRate), v => { UI.ffRate = +v; });
+  syncers.push($('segFF')._sync);
+  segmented($('segSpeed'), [{ v: '0.5', label: '½×' }, { v: '1', label: '1×' }, { v: '2', label: '2×' }, { v: '4', label: '4×' }], () => String(UI.speed), v => { UI.speed = +v; });
+  syncers.push($('segSpeed')._sync);
+
+  const cnt = $('inCount'), rate = $('inRate'), seed = $('inSeed');
+  syncSliders();
+  cnt.addEventListener('input', () => { UI.cfg.count = +cnt.value; $('outCount').textContent = COUNT_LABEL[UI.cfg.app][4](UI.cfg.count); });
+  cnt.addEventListener('change', rebuild);
+  rate.addEventListener('input', () => { UI.cfg.rate = +rate.value; $('outRate').textContent = RATE_LABEL[UI.cfg.app][4](UI.cfg.rate); });
+  rate.addEventListener('change', rebuild);
+  $('onP1').addEventListener('change', e => {
+    UI.cfg.prod.on = e.target.checked;
+    if (e.target.checked && sim.now < UI.cfg.prod.start) sim.at(UI.cfg.prod.start, () => { if (UI.cfg.prod.on) sim.producer.setOn(true); });
+    else sim.producer.setOn(e.target.checked);
+    renderStatic(); renderNow();
+  });
+  $('stP1').addEventListener('change', e => { UI.cfg.prod.start = Math.max(0, +e.target.value || 0); e.target.value = UI.cfg.prod.start; rebuild(); });
+  $('inPrefix').addEventListener('change', e => {
+    const v = e.target.value.trim().replace(/\/+$/, '');
+    if (!/^(\/[A-Za-z0-9._~-]+)+$/.test(v)) { e.target.value = UI.cfg.prefix; return; }   // an NDN name of URI-safe components
+    UI.cfg.prefix = v; UI.measured = {}; syncSliders(); rebuild();
+  });
+  for (const k of CONSUMERS) {
+    const u = k.toUpperCase();
+    $('on' + u).addEventListener('change', e => { UI.cfg.cons[k].on = e.target.checked; rebuild(); });
+    $('st' + u).addEventListener('change', e => { UI.cfg.cons[k].start = Math.max(0, +e.target.value || 0); e.target.value = UI.cfg.cons[k].start; rebuild(); });
+  }
+  seed.addEventListener('change', () => { UI.cfg.seed = Math.max(1, Math.floor(+seed.value || 1)); seed.value = UI.cfg.seed; UI.measured = {}; rebuild(); });
+
+  $('tgRoutes').addEventListener('change', e => { UI.showRoutes = e.target.checked; renderStatic(); });
+  $('tgOver').addEventListener('change', e => { UI.showOver = e.target.checked; });
+  $('tgCost').addEventListener('change', e => { UI.showCosts = e.target.checked; renderStatic(); });
+  $('tgDash').addEventListener('change', e => { UI.dashUnrouted = e.target.checked; renderLinks(); });
+  $('tgPath').addEventListener('change', e => { UI.showPath = e.target.checked; renderLinks(); });
+  $('tgRipple').addEventListener('change', e => { UI.showRipple = e.target.checked; });
+  $('tgBadges').addEventListener('change', e => { UI.showBadges = e.target.checked; renderNodes(); });
+  $('tgLabels').addEventListener('change', e => { UI.showLabels = e.target.checked; renderLinks(); });
+  $('btnPlay').addEventListener('click', () => { UI.running = !UI.running; syncTransport(); });
+  $('btnStep').addEventListener('click', () => { UI.running = false; step(); syncTransport(); });
+  $('btnReset').addEventListener('click', rebuild);
+  $('btnTurbo').addEventListener('click', () => { UI.turbo = !UI.turbo; UI.target = null; if (UI.turbo) UI.running = true; syncTransport(); });
+  $('btnSkip60').addEventListener('click', () => skip(60));
+  $('btnSkip600').addEventListener('click', () => skip(600));
+  $('btnMeasure').addEventListener('click', measureAll);
+
+  $('btnDefaults').addEventListener('click', resetDefaults);
+  const nt = $('nodeTable');
+  nt.addEventListener('change', e => { const t = e.target; if (t.dataset.act) nodeAction(t.dataset.act, t.dataset.id, t.checked); });
+  nt.addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (b) nodeAction(b.dataset.act, b.dataset.id); });
+
+  $('stage').addEventListener('click', e => {
+    const n = e.target.closest('[data-node]'), l = e.target.closest('[data-link]');
+    UI.sel = n ? { kind: 'node', id: n.dataset.node } : l ? { kind: 'link', id: l.dataset.link } : null;
+    if (UI.sel) $('secInsp').open = true;
+    renderStatic(); renderInspector(true);
+  });
+  $('profTable').addEventListener('click', e => { const b = e.target.closest('button[data-load]'); if (b) { loadProfile(b.dataset.load); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+
+  $('legend').innerHTML = [
+    [glyphSvg('I', 'var(--interest)', 'rx'), 'Interest'],
+    [glyphSvg('D', 'var(--data)', 'rx'), 'Data from the producer'],
+    [glyphSvg('D', 'var(--cache)', 'rx'), 'Data served from a cache'],
+    [glyphSvg('N', 'var(--nack)', 'rx'), 'Nack'],
+    [glyphSvg('H', 'var(--hello)', 'rx'), 'NLSR hello'],
+    [glyphSvg('S', 'var(--hello)', 'rx'), 'NLSR sync (PSync)'],
+    [glyphSvg('L', 'var(--hello)', 'rx'), 'NLSR LSA fetch'],
+    [`<svg width="34" height="18" viewBox="-11 -9 34 18"><path d="${glyphPath('I')}" ${glyphStyle('var(--interest)', 'over')}/><path transform="translate(14,0)" d="${glyphPath('D')}" ${glyphStyle('var(--data)', 'over')}/></svg>`, 'Overheard unicast frame of any type (dashed outline in its own colour), heard by a neighbour and discarded below NFD'],
+    ['<svg width="22" height="18" viewBox="-11 -9 22 18"><path d="M-5,-5 L5,5 M5,-5 L-5,5" stroke="var(--loss)" stroke-width="2.5"/></svg>', 'Frame lost or sent into a broken link'],
+    ['<svg width="22" height="18" viewBox="-11 -9 22 18"><circle r="7" fill="none" stroke="var(--dup)" stroke-width="2"/></svg>', 'Duplicate dropped at a node'],
+    ['<svg width="22" height="18" viewBox="-11 -9 22 18"><circle r="7" fill="none" stroke="var(--cache)" stroke-width="2.5"/></svg>', 'Content Store hit'],
+    ['<svg width="22" height="18" viewBox="-11 -9 22 18"><path d="M-9,0 L6,0" class="rt main" marker-end="url(#ah)"/></svg>', 'Route: best next hop (dashed: alternatives)'],
+    ['<svg width="34" height="18" viewBox="-17 -9 34 18"><text class="cost" x="-8" y="0">10</text><text class="cost dyn" x="9" y="0">40</text></svg>', 'Costs: grey in the middle of a link is its configured link cost; darker near a node is what that node\'s strategy ranks the face by (route cost to the data prefix, or ASF\'s smoothed RTT, ? unmeasured, t/o timed out). With "Show all costs" off, only the links that carried Interests, Data or Nacks in the last seconds keep their costs'],
+    ['<svg width="34" height="18" viewBox="-17 -9 34 18"><path d="M-15,0 L15,0" class="lnk noroute"/></svg>', 'Dotted link: in radio range, but no node has a route over it (for example with routing set to None)'],
+  ].map(([g, t]) => `<li>${g}<span>${esc(t)}</span></li>`).join('');
+  renderSources();
+  syncAll();
+}
+function routingHint() {
+  const c = UI.cfg;
+  if (c.routing === 'none' && c.strategy !== 'self-learning') return 'Without routes this strategy has nowhere to send Interests; self-learning is the strategy built for this case.';
+  if (c.routing !== 'none' && c.strategy === 'self-learning') return 'Self-learning normally runs without routes. With routes it skips discovery and sends to all next hops.';
+  if (c.routing === 'static') return 'Routes computed once at t = 0 from the links in range at that moment; they never change.';
+  if (c.routing === 'nlsr') return 'NLSR detects a broken link after 3 missed hellos (sent every 60 s), builds a new LSA 10 s later and recomputes routes 15 s after that. Its hellos, sync and LSA frames share the radio with the data.';
+  return 'Self-learning floods the first Interest to every neighbour and learns a route from the Data that comes back.';
+}
+function syncTransport() { $('btnPlay').textContent = UI.running ? 'Pause' : 'Play'; $('btnTurbo').setAttribute('aria-pressed', String(UI.turbo)); }
+function setLink(id, patch) {
+  Object.assign(UI.cfg.links.get(id), patch);
+  const l = sim.linkMap.get(id); Object.assign(l, patch); sim.ver++;
+  if (patch.on !== undefined) sim.log(l.a, `link ${l.a}–${l.b} ${patch.on ? 'back in range' : 'out of range'}`, patch.on ? 'U' : 'X');
+  renderStatic();
+}
+function setCaching(id, on) {
+  UI.cfg.caching.set(id, on); sim.nodes.get(id).caching = on; sim.ver++;
+  sim.log(id, `caching ${on ? 'on' : 'off'} (nfdc cs config admit ${on ? 'on' : 'off'} serve ${on ? 'on' : 'off'})`, 'U');
+  renderStatic();
+}
+function setNodeOn(id, on) {
+  if (on) UI.cfg.nodesOff.delete(id); else UI.cfg.nodesOff.add(id);
+  sim.nodes.get(id).on = on; sim.ver++;
+  sim.log(id, on ? 'radio back on (tables kept)' : 'radio off: sends and receives nothing, tables kept', on ? 'U' : 'X');
+  renderStatic();
+}
+function nodeAction(act, id, checked) {
+  if (act === 'link') { setLink(id, { on: checked }); return; }
+  if (act === 'flap') {
+    if (checked) { UI.cfg.flaps.set(id, Math.max(1, +$('lkFlapS').value || P.flap)); sim.scheduleFlap(id); } else UI.cfg.flaps.delete(id);
+    sim.ver++; renderStatic(); return;
+  }
+  const n = sim.nodes.get(id);
+  if (act === 'node') setNodeOn(id, checked === undefined ? !n.on : checked);
+  else if (act === 'cs') setCaching(id, checked === undefined ? !n.caching : checked);
+  else if (act === 'clrcs') { n.clearCs(); sim.log(id, 'Content Store cleared', 'U'); }
+  else if (act === 'clrfib') { n.resetFib(); sim.log(id, 'FIB emptied (static routes do not come back; NLSR re-registers at its next routing calculation)', 'X'); }
+  else if (act === 'reset') { n.resetAll(); sim.log(id, 'node reset: CS, PIT, FIB, Dead Nonce List and measurements emptied', 'X'); }
+  sim.ver++; renderStatic(); renderNow();
+}
+function resetDefaults() {
+  UI.profile = null;
+  Object.assign(UI.cfg, { flaps: new Map(), caching: new Map(), nodesOff: new Set(), events: [], cons: defaultCons(0.3), prod: { on: true, start: 0 }, prefix: '/prod', rate: RATE_DEFAULT[UI.cfg.app] });
+  for (const id of UI.cfg.links.keys()) UI.cfg.links.set(id, defaultLink(id));
+  syncAll(); syncSliders(); rebuild();
+}
+
+/* ---------- Time ---------- */
+function step() { const t = sim.nextTime(); if (t === Infinity) return; sim.runUntil(t); sim.retire(); }
+// Skip fast-forwards to the target time at the chosen speed, so counters, tables and timeline can be watched on the way
+function skip(sec) { UI.target = sim.now + sec; UI.turbo = true; UI.running = true; syncTransport(); }
+function skipNow(sec) { sim.quiet = true; sim.runUntil(sim.now + sec); sim.retire(); sim.quiet = false; renderNow(); }
+function renderNow() { if (UI.ver !== sim.ver) renderStatic(); else renderLinks(); renderNodes(); renderRoutes(); renderCosts(); renderReadouts(); renderEfficiency(); renderTimeline(); renderLog(); renderInspector(false); }
+function advance(dt) {
+  if (UI.turbo) {
+    let to = sim.now + dt * UI.ffRate;
+    if (UI.target != null) to = Math.min(to, UI.target);
+    sim.quiet = true; sim.runUntil(to); sim.retire(); sim.quiet = false;
+    if (UI.target != null && sim.now >= UI.target - 1e-9) { UI.target = null; UI.turbo = false; UI.running = false; syncTransport(); }
+    return;
+  }
+  if (sim.inFlight()) { UI.idle = 0; sim.runUntil(sim.now + dt * BASE_RATE * UI.speed); sim.retire(); return; }
+  const t = sim.nextTime(); if (t === Infinity) return;
+  UI.idle += dt;
+  if (UI.idle < 0.3 / UI.speed && t - sim.now > 0.01) return;
+  UI.idle = 0; sim.runUntil(t); sim.retire();
+}
+
+/* ======================================================================
+   Measurement (profiles table and #selftest)
+   ====================================================================== */
+function runHeadless(cfg) {
+  const s = new Sim(cfg); s.quiet = true; s.keepFrames = false; s.noLog = true;
+  const act = CONSUMERS.filter(c => s.consumers[c]);
+  const lastStart = Math.max(0, ...act.map(c => cfg.cons[c].start));
+  const end = cfg.app === 'transfer' ? lastStart + 600 : lastStart + cfg.count / cfg.rate + 6;
+  if (cfg.app === 'transfer') { for (let t = 5; t <= end; t += 5) { s.runUntil(t); if (act.every(c => s.consumers[c].summary().done || s.consumers[c].failed)) break; } }
+  else s.runUntil(end);
+  const sum = act.map(c => s.consumers[c].summary()), st = s.st;
+  const m = { strategy: cfg.strategy, routing: cfg.routing, app: cfg.app, total: sum.reduce((a, x) => a + x.total, 0),
+    prod: sum.reduce((a, x) => a + x.prod, 0), cache: sum.reduce((a, x) => a + x.cache, 0), lost: sum.reduce((a, x) => a + x.lost, 0),
+    retx: sum.reduce((a, x) => a + (x.retx || 0), 0), nacks: sum.reduce((a, x) => a + (x.nacks || 0), 0),
+    dataFrames: st.frames.I + st.frames.D + st.frames.N, nlsrFrames: st.frames.H + st.frames.S + st.frames.L,
+    dupI: st.dupI, dupD: st.dupD, simTime: s.now, airData: st.airData / 1e6, airNlsr: st.airNlsr / 1e6, hits: st.hits };
+  if (cfg.app === 'paced' || cfg.app === 'ping') { const r = [].concat(...sum.map(x => x.rtt)); m.delay = mean(r); m.maxDelay = r.length ? Math.max(...r) : NaN; }
+  if (cfg.app === 'transfer') { m.goodput = sum.map(x => x.goodput); m.dur = sum.map(x => x.dur); m.done = sum.map(x => x.done); m.timeouts = sum.reduce((a, x) => a + x.timeouts, 0); m.byNode = sum.map(x => x.byNode); }
+  if (cfg.app === 'paced') {
+    // segments lost or later than 0.5 s, for the "why" column
+    const bad = [].concat(...CONSUMERS.map(c => s.consumers[c].recs.filter(x => x.state === 'lost' || (x.rtt != null && x.rtt > 0.5)).map(x => x.seg)));
+    m.badFirst = bad.length ? Math.min(...bad) : null; m.badLast = bad.length ? Math.max(...bad) : null; m.badCount = bad.length;
+    m.byNode = sum.map(x => x.byNode);
+  }
+  return m;
+}
+function profileVariants(p) {
+  const strategies = p.all ? ['best-route', 'asf', 'multicast', 'self-learning'] : [p.strategy];
+  const out = { without: [], with: [] };
+  for (const strategy of strategies) {
+    const base = p.all && strategy === 'self-learning' && !p.faces ? 'none' : p.base;
+    out.without.push(runHeadless(profileCfg(p, { strategy, routing: base })));
+    if (!p.noNlsr) out.with.push(runHeadless(profileCfg(p, { strategy, routing: 'nlsr' })));
+  }
+  return out;
+}
+function fmtMeasure(m) {
+  if (!m) return '';
+  const lines = [m.strategy + (m.routing === 'none' ? ' (no routes)' : '')];
+  if (m.app === 'transfer') lines.push(`goodput c1 ${m.goodput[0].toFixed(2)}, c2 ${m.goodput[1].toFixed(2)} Mbit/s`, `time c1 ${m.dur[0].toFixed(1)} s, c2 ${m.dur[1].toFixed(1)} s, timeouts ${m.timeouts}`);
+  else {
+    lines.push(`delivered ${m.prod + m.cache}/${m.total} (cache ${m.cache}), lost ${m.lost}`);
+    lines.push(`${m.app === 'ping' ? 'mean RTT' : 'mean delay'} ${ms(m.delay)}${m.app === 'paced' ? `, retransmissions ${m.retx}` : ''}`);
+  }
+  lines.push(`frames ${m.dataFrames} data` + (m.nlsrFrames ? ` + ${m.nlsrFrames} NLSR` : '') + `, duplicates ${m.dupI}`);
+  return lines.join('\n');
+}
+function measureAll() {
+  const btn = $('btnMeasure'); btn.disabled = true; btn.textContent = 'Measuring…';
+  let i = 0;
+  const next = () => {
+    if (i >= PROFILES.length) { btn.disabled = false; btn.textContent = 'Measure all profiles'; $('measureNote').textContent = `Measured with seed ${UI.cfg.seed} and layer ${UI.cfg.layer}, without animation. Both consumers' results are added together; frames count every transmission on the shared medium.`; return; }
+    const p = PROFILES[i++]; UI.measured[p.id] = profileVariants(p); renderProfiles(); setTimeout(next, 0);
+  };
+  setTimeout(next, 0);
+}
+function selftest() {
+  const out = {};
+  for (const p of PROFILES) out[p.id] = profileVariants(p);
+  const el = $('selftest'); el.hidden = false; el.textContent = JSON.stringify(out, (k, v) => (typeof v === 'number' && !Number.isInteger(v) ? +v.toFixed(4) : v), 1);
+}
+
+/* ======================================================================
+   Rendering
+   ====================================================================== */
+const COL = { I: 'var(--interest)', D: 'var(--data)', C: 'var(--cache)', N: 'var(--nack)', H: 'var(--hello)', S: 'var(--hello)', L: 'var(--hello)' };
+function pktColor(p) { return p.t === 'D' ? (p.origin === 'p1' ? COL.D : COL.C) : COL[p.t]; }
+function glyphPath(t) {
+  if (t === 'I') return 'M8,0 L-6,-6 L-6,6 Z';
+  if (t === 'D') return 'M-6,-6 L6,-6 L6,6 L-6,6 Z';
+  if (t === 'L') return 'M-4,-4 L4,-4 L4,4 L-4,4 Z';
+  if (t === 'N') return 'M0,-7 L7,0 L0,7 L-7,0 Z';
+  if (t === 'S') return 'M0,-5 L5,4 L-5,4 Z';
+  return 'M-4,0 A4,4 0 1,0 4,0 A4,4 0 1,0 -4,0 Z';
+}
+function glyphStyle(col, st) { return st === 'over' ? `fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="2 2" opacity="0.6"` : `fill="${col}" stroke="var(--panel)" stroke-width="1"`; }
+function glyphSvg(t, col, st) { return `<svg width="22" height="18" viewBox="-11 -9 22 18"><path d="${glyphPath(t)}" ${glyphStyle(col, st)}/></svg>`; }
+
+function activeWindow() { return sim.cfg.app === 'transfer' ? 1 : Math.max(2, 2 / sim.cfg.rate); }
+function routedEnd(x, y) { return sim.nodes.get(x).fibD().some(h => (h.face.kind === 'ucast' && h.face.peer === y) || h.face.kind === 'mcast'); }
+function renderLinks() {
+  const since = sim.now - activeWindow();
+  let h = '';
+  for (const l of sim.links) {
+    const A = POS[l.a], B = POS[l.b], sel = UI.sel && UI.sel.kind === 'link' && UI.sel.id === l.id, up = sim.usable(l);
+    const cls = ['lnk', up ? '' : 'off', up && UI.dashUnrouted && !routedEnd(l.a, l.b) && !routedEnd(l.b, l.a) ? 'noroute' : '', sel ? 'sel' : ''].join(' ');
+    if (UI.showPath && up && l.lastUse > since) h += `<line class="lnk inuse" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
+    h += `<line class="${cls}" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
+    h += `<line class="lnk-hit" data-link="${l.id}" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"><title>${l.a}–${l.b}</title></line>`;
+    const lab = [];
+    if (l.loss > 0) lab.push(`${Math.round(l.loss * 100)}% loss`);
+    if (UI.cfg.flaps.has(l.id)) lab.push(`flips every ${UI.cfg.flaps.get(l.id)} s`);
+    if (lab.length && UI.showLabels) {
+      // offset to the side opposite the link cost, so the text never sits on the line
+      const L = Math.hypot(B.x - A.x, B.y - A.y), ux = (B.x - A.x) / L, uy = (B.y - A.y) / L;
+      h += `<text class="lnk-lab${l.loss > 0 ? ' loss' : ''}" x="${((A.x + B.x) / 2 + uy * 15).toFixed(1)}" y="${((A.y + B.y) / 2 - ux * 15).toFixed(1)}">${lab.join(' · ')}</text>`;
+    }
+  }
+  $('gLinks').innerHTML = h;
+}
+function renderStatic() {
+  renderLinks(); renderNodes(); renderRoutes(); renderCosts(); renderNodeTable(); UI.ver = sim.ver;
+}
+function renderNodeTable() {
+  const rows = NODE_DEFS.map(d => {
+    const n = sim.nodes.get(d.id);
+    const links = sim.links.filter(l => l.a === d.id || l.b === d.id).map(l => {
+      const o = l.a === d.id ? l.b : l.a;
+      return `<label class="${l.on ? '' : 'off'}" title="link ${l.a}–${l.b}"><input type="checkbox" data-act="link" data-id="${l.id}"${l.on ? ' checked' : ''}>${o}</label>`;
+    }).join('');
+    return `<tr class="${n.on ? '' : 'down'}"><td class="nm">${d.id}</td>
+      <td><input type="checkbox" data-act="node" data-id="${d.id}"${n.on ? ' checked' : ''} aria-label="${d.id} radio on"></td>
+      <td><input type="checkbox" data-act="cs" data-id="${d.id}"${n.caching ? ' checked' : ''} aria-label="caching at ${d.id}"></td>
+      <td class="acts"><button type="button" data-act="clrcs" data-id="${d.id}" title="Clear the Content Store of ${d.id}">CS</button><button type="button" data-act="clrfib" data-id="${d.id}" title="Empty the FIB of ${d.id}">FIB</button><button type="button" class="na" aria-disabled="true" title="Not available: NFD has no management command to empty the PIT. Only restarting NFD clears it (Reset node in the inspector)">PIT</button></td>
+      <td><div class="lks">${links}</div></td></tr>`;
+  }).join('');
+  $('nodeTable').innerHTML = `<tr><th>Node</th><th>On</th><th>CS</th><th>Clear</th><th>Links</th></tr>${rows}`;
+}
+function renderRoutes() {
+  if (!UI.showRoutes) { $('gRoutes').innerHTML = ''; return; }
+  let h = '';
+  for (const n of sim.nodes.values()) {
+    if (n.id === 'p1') continue;
+    const A = POS[n.id];
+    n.fibD().forEach((nh, i) => {
+      if (nh.face.kind === 'mcast') { h += `<circle class="rt mc" cx="${A.x}" cy="${A.y}" r="33"><title>${n.id}: route on the multicast face</title></circle>`; return; }
+      if (nh.face.kind !== 'ucast') return;
+      const B = POS[nh.face.peer], dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+      const x1 = A.x + ux * 30, y1 = A.y + uy * 30, x2 = A.x + ux * (i === 0 ? 78 : 62), y2 = A.y + uy * (i === 0 ? 78 : 62), ox = -uy * 5, oy = ux * 5;
+      h += `<line class="rt ${i === 0 ? 'main' : 'alt'}" x1="${x1 + ox}" y1="${y1 + oy}" x2="${x2 + ox}" y2="${y2 + oy}" marker-end="url(#ah)"><title>${n.id} → ${nh.face.peer} cost ${nh.cost}</title></line>`;
+    });
+  }
+  $('gRoutes').innerHTML = h;
+}
+function renderNodes() {
+  let h = '';
+  for (const d of NODE_DEFS) {
+    const n = sim.nodes.get(d.id), A = POS[d.id], sel = UI.sel && UI.sel.kind === 'node' && UI.sel.id === d.id;
+    h += `<g class="${['nd', d.role || '', n.caching ? '' : 'nocache', n.on ? '' : 'down', sel ? 'sel' : ''].join(' ')}" data-node="${d.id}">`;
+    if (sel) h += `<circle class="ring" cx="${A.x}" cy="${A.y}" r="29"/>`;
+    h += `<circle class="body" cx="${A.x}" cy="${A.y}" r="23"><title>${d.id}</title></circle><text class="id" x="${A.x}" y="${A.y}">${d.id}</text>`;
+    if (d.role) h += `<text class="cap" x="${A.x}" y="${A.y + (d.row === 0 ? -38 : 44)}">${d.role === 'P' ? 'producer' : 'consumer'}</text>`;
+    if (!n.caching) h += badge('b-off', A.x + 26, A.y + 24, 'no cache'); else if (n.cs.size && UI.showBadges) h += badge('b-cs', A.x + 26, A.y + 24, 'CS ' + n.cs.size);
+    if (n.pit.size && UI.showBadges) h += badge('b-pit', A.x + 26, A.y - 24, 'PIT ' + n.pit.size);
+    h += '</g>';
+  }
+  $('gNodes').innerHTML = h;
+}
+// Link costs: configured link cost at the middle; near each end, what that end's strategy uses for the face
+function faceMetric(n, f) {
+  if (sim.strategy.metric) return sim.strategy.metric(n, f);
+  const nh = n.fibD().find(h => h.face.id === f.id);
+  return nh ? String(nh.cost) : null;
+}
+function renderCosts() {
+  const pathOnly = !UI.showCosts, since = sim.now - activeWindow();
+  let h = '';
+  for (const l of sim.links) {
+    if (pathOnly && !(l.lastUse > since)) continue;
+    const A = POS[l.a], B = POS[l.b], dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+    h += `<text class="cost" x="${((A.x + B.x) / 2 - uy * 9).toFixed(1)}" y="${((A.y + B.y) / 2 + ux * 9).toFixed(1)}"><title>configured link cost ${l.a}–${l.b}</title>${l.cost}</text>`;
+    for (const [from, to, sx, sy] of [[l.a, l.b, ux, uy], [l.b, l.a, -ux, -uy]]) {
+      const n = sim.nodes.get(from), f = n.faceTo(to); if (!f) continue;
+      if (pathOnly && !(l.useFrom && l.useFrom[from] > since)) continue;
+      const v = faceMetric(n, f); if (v == null) continue;
+      const P0 = POS[from], x = P0.x + sx * 52 + sy * 16, y = P0.y + sy * 52 - sx * 16;
+      h += `<text class="cost dyn" x="${x.toFixed(1)}" y="${y.toFixed(1)}"><title>${from} → ${to}: ${sim.cfg.strategy === 'asf' ? 'ASF smoothed RTT' : 'route cost to ' + esc(sim.cfg.prefix)}</title>${v}</text>`;
+    }
+  }
+  $('gCost').innerHTML = h;
+}
+function renderEfficiency() {
+  const st = sim.st, act = CONSUMERS.filter(c => sim.consumers[c]);
+  const delivered = act.reduce((a, c) => { const s = sim.consumers[c].summary(); return a + (s.kind === 'ping' ? s.recv : s.kind === 'transfer' ? s.recv : s.prod + s.cache); }, 0);
+  const ideal = act.reduce((a, c) => a + (sim.consumers[c].ideal || 0), 0);
+  let rxI = 0, supp = 0; for (const n of sim.nodes.values()) { rxI += n.c.rxT.I; supp += n.c.supp; }
+  const all = Object.values(st.frames).reduce((a, b) => a + b, 0), nlsr = st.frames.H + st.frames.S + st.frames.L;
+  const pct = (a, b) => (b > 0 ? (a / b * 100).toFixed(1) + '%' : '–'), per = (a, b) => (b > 0 ? (a / b).toFixed(2) : '–');
+  const tiles = [
+    ['Data received by consumers', delivered, ''],
+    ['Interest frames per Data received', per(st.frames.I, delivered), `${st.frames.I} Interest frames`],
+    ['Interest efficiency', pct(ideal, st.frames.I), `minimum ${ideal} frames`],
+    ['Data frames per Data received', per(st.frames.D, delivered), `${st.frames.D} Data frames`],
+    ['Duplicate Interests dropped', st.dupI, `${pct(st.dupI, rxI)} of Interests received`],
+    ['Duplicate or unsolicited Data', st.dupD, `${pct(st.dupD, st.frames.D)} of Data frames`],
+    ['Rejected: Nacks sent', st.frames.N, ''],
+    ['Suppressed retransmissions', supp, ''],
+    ['Frames lost or into a broken link', st.lost + st.dead, `${pct(st.lost + st.dead, all)} of all frames`],
+    ['NLSR frames', nlsr, `${pct(nlsr, all)} of all frames`],
+  ];
+  $('effSum').innerHTML = tiles.map(([k, v, sub]) => `<div><dt>${esc(k)}</dt><dd>${v}${sub ? ` <small>${esc(sub)}</small>` : ''}</dd></div>`).join('');
+  // What every transmitted frame was: the minimum needed, the extra, Nacks and NLSR (one partition of all frames)
+  const needI = Math.min(ideal, st.frames.I), needD = Math.min(ideal, st.frames.D);
+  const parts = [
+    ['Interests needed', needI, 'var(--interest)', ''], ['Extra Interests', st.frames.I - needI, 'var(--interest)', 'extra'],
+    ['Data needed', needD, 'var(--data)', ''], ['Extra Data', st.frames.D - needD, 'var(--data)', 'extra'],
+    ['Nacks', st.frames.N, 'var(--nack)', ''], ['NLSR', nlsr, 'var(--hello)', ''],
+  ];
+  $('effBar').innerHTML = parts.filter(x => x[1] > 0).map(([k, v, c, cls]) => `<i class="${cls}" style="width:${(v / Math.max(1, all) * 100).toFixed(2)}%;background-color:${c}" title="${esc(k)}: ${v} frames (${pct(v, all)})"></i>`).join('');
+  $('effKey').innerHTML = parts.map(([k, v, c, cls]) => `<span class="chipk"><i class="${cls}" style="background-color:${c}"></i>${esc(k)} <b>${v}</b> <span>${pct(v, all)}</span></span>`).join('') +
+    `<span class="chipk">of ${all} frames on the medium; lost or into a broken link <b>${st.lost + st.dead}</b></span>`;
+  const cols = [
+    ['Interests<br>sent', c => c.txT.I, 'var(--interest)'], ['Interests<br>received', c => c.rxT.I, 'var(--interest)'],
+    ['Data<br>sent', c => c.txT.D, 'var(--data)'], ['Data<br>received', c => c.rxT.D, 'var(--data)'],
+    ['Nacks<br>sent', c => c.txT.N, 'var(--nack)'], ['Retx<br>suppressed', c => c.supp, 'var(--dup)'],
+    ['Duplicate<br>Interests', c => c.dupI, 'var(--dup)'], ['Duplicate<br>Data', c => c.dupD, 'var(--dup)'],
+    ['Lost<br>(sent)', c => c.lostTx, 'var(--loss)'], ['Over-<br>heard', c => c.over, 'var(--link)'],
+    ['CS<br>hits', c => c.hits, 'var(--cache)'], ['NLSR<br>sent', c => c.txT.H + c.txT.S + c.txT.L, 'var(--hello)'],
+  ];
+  const nodes = NODE_DEFS.map(d => sim.nodes.get(d.id)), max = cols.map(([, f]) => Math.max(1, ...nodes.map(n => f(n.c))));
+  const rows = NODE_DEFS.map((d, i) => {
+    const c = nodes[i].c, role = d.role === 'P' ? 'producer' : d.role === 'C' ? 'consumer' : '';
+    return `<tr><td><b>${d.id}</b> <span class="empty">${role}</span></td>${cols.map(([, f, col], j) => { const v = f(c); return `<td><span class="cb" style="width:${(v / max[j] * 34).toFixed(0)}px;background:${col}"></span>${v}</td>`; }).join('')}</tr>`;
+  }).join('');
+  $('effTable').innerHTML = `<tr><th>Node</th>${cols.map(([t]) => `<th>${t}</th>`).join('')}</tr>${rows}`;
+}
+function badge(cls, x, y, txt) { const w = 8 + txt.length * 6.2; return `<g class="badge ${cls}"><rect x="${x - w / 2}" y="${y - 8}" width="${w}" height="16" rx="3"/><text x="${x}" y="${y}">${txt}</text></g>`; }
+function renderPackets() {
+  if (UI.turbo) { $('gPk').innerHTML = ''; return; }
+  const now = sim.now; let h = '';
+  for (const f of sim.frames) {
+    if (now < f.t0 || f.t1 <= f.t0) continue;
+    const p = Math.min(1, (now - f.t0) / (f.t1 - f.t0)); if (p >= 1) continue;
+    const A = POS[f.from], col = pktColor(f.pkt);
+    if (f.bc && UI.showRipple) h += `<circle class="ripple" cx="${A.x}" cy="${A.y}" r="${(26 + p * 255).toFixed(1)}" fill="none" stroke="${col}" stroke-width="2" opacity="${(0.55 * (1 - p)).toFixed(2)}"/>`;
+    for (const r of f.rx) {
+      if (r.st === 'over' && !UI.showOver) continue;
+      const B = POS[r.to];
+      let q = p; if (r.st === 'lost' || r.st === 'dead') q = Math.min(p, 0.55); if (r.st === 'over') q = Math.min(p, 0.62);
+      const x = A.x + (B.x - A.x) * q, y = A.y + (B.y - A.y) * q, ang = Math.atan2(B.y - A.y, B.x - A.x) * 180 / Math.PI;
+      h += `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${f.pkt.t === 'I' ? ang.toFixed(0) : 0})"><path d="${glyphPath(f.pkt.t)}" ${glyphStyle(col, r.st)}/></g>`;
+      if (r.st !== 'over' && f.tries > 1 && !f.bc) h += `<text x="${(x + 9).toFixed(1)}" y="${(y - 9).toFixed(1)}" style="font:10px var(--font-mono);fill:var(--muted)">${f.tries} tries</text>`;
+    }
+  }
+  $('gPk').innerHTML = h;
+}
+function renderFx() {
+  const now = performance.now(); let h = '';
+  sim.fx = sim.fx.filter(e => now - e.wall < 1100);
+  for (const e of sim.fx) {
+    const a = (now - e.wall) / 1100;
+    if (e.type === 'x') { const s = 7; h += `<path d="M${e.x - s},${e.y - s} L${e.x + s},${e.y + s} M${e.x + s},${e.y - s} L${e.x - s},${e.y + s}" stroke="var(--loss)" stroke-width="3" stroke-linecap="round" opacity="${(1 - a).toFixed(2)}"/>`; continue; }
+    const A = POS[e.node], col = e.type === 'hit' ? 'var(--cache)' : 'var(--dup)';
+    h += `<circle cx="${A.x}" cy="${A.y}" r="${(25 + a * 22).toFixed(1)}" fill="none" stroke="${col}" stroke-width="${e.type === 'hit' ? 3 : 2}" opacity="${(1 - a).toFixed(2)}"/>`;
+  }
+  $('gFx').innerHTML = h;
+}
+function renderCaption() {
+  const p = PROFILES.find(x => x.id === UI.profile);
+  $('caption').innerHTML = p ? `<b>${esc(p.name)}</b><p>${esc(p.script)} ${esc(p.watch)}</p>` : '<b>Manual mode</b><p>Pick a profile on the right for a guided failure, or set links, caches and routing yourself.</p>';
+}
+
+/* ---------- Inspector ---------- */
+const SECTIONS = [['faces', 'Faces'], ['fib', 'FIB /prod'], ['pit', 'PIT'], ['cs', 'Content Store (CS)'], ['asf', 'ASF measurements'], ['nlsr', 'NLSR neighbours'], ['app', 'Application'], ['counters', 'Counters']];
+function compactRanges(a) {
+  const out = []; let s = a[0], p = a[0];
+  for (let i = 1; i <= a.length; i++) { if (a[i] === p + 1) { p = a[i]; continue; } out.push(s === p ? `${s}` : `${s}–${p}`); s = p = a[i]; }
+  return out.join(', ');
+}
+function csSummary(n) {
+  const groups = new Map();
+  for (const name of n.cs.keys()) {
+    const m = name.match(/^(.*?)(\d+)$/), k = m ? m[1] : name;
+    if (!groups.has(k)) groups.set(k, []);
+    if (m) groups.get(k).push(+m[2]);
+  }
+  return [...groups].map(([k, v]) => `${esc(k)}${v.length ? '{' + compactRanges(v.sort((a, b) => a - b)) + '}' : ''}`).join('<br>');
+}
+// RIB routes of the node for the data prefix, editable as with nfdc route add / remove (origin static)
+function fibEditor(n) {
+  const now = sim.now, pre = sim.cfg.prefix, best = n.fibD()[0];
+  const rows = n.routes.filter(r => r.prefix === pre && r.expires > now).sort((a, b) => a.cost - b.cost || a.faceId - b.faceId).map(r => {
+    const mark = best && best.face.id === r.faceId && best.cost === r.cost ? '▸ ' : '';
+    return `<tr><td>${mark}${n.faceName(n.faceById.get(r.faceId))}</td>
+      <td>${r.origin === 'app' ? r.cost : `<input type="number" class="rc" data-face="${r.faceId}" data-origin="${r.origin}" value="${r.cost}" min="0" max="65535" step="1" style="width:66px" aria-label="cost via ${n.faceName(n.faceById.get(r.faceId))}">`}</td>
+      <td>${r.origin}</td><td>${r.expires !== Infinity ? (r.expires - now).toFixed(0) + ' s' : ''}</td>
+      <td>${r.origin === 'app' ? '' : `<button type="button" class="mini" data-rm="${r.faceId}" data-origin="${r.origin}" title="nfdc route remove ${esc(pre)} nexthop ${r.faceId} origin ${r.origin}">✕</button>`}</td></tr>`;
+  }).join('');
+  const faces = n.faces.filter(f => f.kind !== 'app').map(f => `<option value="${f.id}">${n.faceName(f)}</option>`).join('');
+  return `<div class="tbl-scroll"><table class="t"><tr><th>Next hop</th><th>Cost</th><th>Origin</th><th>Expires</th><th></th></tr>${rows || '<tr><td colspan="5" class="empty">No route</td></tr>'}</table></div>
+    <div class="toggles"><select id="rtFace" style="width:auto" aria-label="face for a new route">${faces}</select><input type="number" id="rtCost" value="10" min="0" max="65535" style="width:66px" aria-label="cost of the new route"><button type="button" class="mini" id="rtAdd">Add route</button></div>
+    <p class="hint">Routes in the RIB; the FIB keeps the lowest cost per face. Editing a static route changes its cost (nfdc route add ... cost). Editing an NLSR or self-learning route adds a static route on that face, because those routes are rewritten whenever NLSR recomputes or self-learning relearns.</p>`;
+}
+function routeEdit(n, faceId, origin, cost) {
+  const pre = sim.cfg.prefix, own = origin === 'static' ? 'static' : 'static';
+  n.addRoute(pre, faceId, own, cost, Infinity);
+  n.log(`nfdc route add ${pre} nexthop ${faceId} (${n.faceName(n.faceById.get(faceId))}) cost ${cost}${origin !== 'static' ? `, next to the ${origin} route` : ''}`, 'U');
+  sim.ver++; renderInspector(false); renderRoutes(); renderCosts();
+}
+function routeRemove(n, faceId, origin) {
+  n.removeRoute(faceId, origin);
+  n.log(`nfdc route remove ${sim.cfg.prefix} nexthop ${faceId} (${n.faceName(n.faceById.get(faceId))}) origin ${origin}`, 'X');
+  sim.ver++; renderInspector(false); renderRoutes(); renderCosts();
+}
+function linkRows(n) { return sim.links.filter(l => l.a === n.id || l.b === n.id); }
+function renderInspector(full) {
+  const el = $('insp');
+  if (!UI.sel) { if (full) el.innerHTML = '<p class="hint">Select a node to switch it, clear its tables and open its faces, FIB, PIT and Content Store, or a link to break it or change its loss, cost and flapping.</p>'; return; }
+  if (UI.sel.kind === 'link') {
+    const l = sim.linkMap.get(UI.sel.id);
+    if (full) {
+      el.innerHTML = `<h3>${l.a} – ${l.b}<span class="role">${l.diag ? 'diagonal' : 'straight'}</span><span class="state" id="lkState"></span></h3>
+        <div class="toggles"><label><input type="checkbox" id="lkOn"> In range</label><label><input type="checkbox" id="lkFlap"> Flip every</label><span><input type="number" id="lkFlapS" min="1" max="3600" step="1" value="${UI.cfg.flaps.get(l.id) || P.flap}" style="width:64px"> s</span></div>
+        <div class="slider"><label for="lkLoss">Frame loss on this link</label><output id="lkLossOut"></output><input type="range" id="lkLoss" min="0" max="0.9" step="0.05" value="${l.loss}"></div>
+        <div class="slider"><label for="lkCost">Link cost (NLSR link-cost)</label><output id="lkCostOut"></output><input type="range" id="lkCost" min="1" max="40" step="1" value="${UI.cfg.links.get(l.id).cost}"></div>
+        <p class="hint">Cost feeds static routes and NLSR and takes effect at the next restart. Loss never changes the cost: NLSR's link-cost is configuration, not a measurement.</p>
+        <dl class="kv" id="lkStats"></dl>`;
+      $('lkOn').addEventListener('change', e => { setLink(l.id, { on: e.target.checked }); renderInspector(false); });
+      $('lkFlap').addEventListener('change', e => nodeAction('flap', l.id, e.target.checked));
+      $('lkFlapS').addEventListener('change', e => { const v = Math.max(1, Math.round(+e.target.value) || P.flap); e.target.value = v; if (UI.cfg.flaps.has(l.id)) { UI.cfg.flaps.set(l.id, v); sim.scheduleFlap(l.id); renderStatic(); } });
+      $('lkLoss').addEventListener('input', e => { setLink(l.id, { loss: +e.target.value }); renderInspector(false); });
+      $('lkCost').addEventListener('input', e => { UI.cfg.links.get(l.id).cost = +e.target.value; renderInspector(false); renderStatic(); });
+    }
+    $('lkOn').checked = l.on; $('lkFlap').checked = UI.cfg.flaps.has(l.id);
+    $('lkState').textContent = sim.usable(l) ? '' : (l.on ? 'unusable: a radio is off' : 'out of range');
+    $('lkLossOut').textContent = Math.round(l.loss * 100) + '%';
+    $('lkCostOut').textContent = UI.cfg.links.get(l.id).cost;
+    $('lkStats').innerHTML = `<dt>Frames sent over this link</dt><dd>${l.frames}</dd>`;
+    return;
+  }
+  const n = sim.nodes.get(UI.sel.id);
+  if (full) {
+    const role = n.role === 'P' ? 'producer' : n.role === 'C' ? 'consumer' : 'relay';
+    el.innerHTML = `<h3>${n.id}<span class="role">${role}</span><span class="state" id="ndState"></span></h3>
+      <div class="toggles"><label><input type="checkbox" id="ndOn"> Radio on</label><label><input type="checkbox" id="ndCache"> CS (admit and serve)</label></div>
+      <div class="presets" id="ndActs">
+        <button type="button" class="mini" data-act="clrcs">Clear CS</button><button type="button" class="mini" data-act="clrfib">Empty FIB</button>
+        <button type="button" class="mini na" aria-disabled="true" title="Not available: NFD has no management command to empty the PIT. Only restarting NFD clears it, which is what Reset node does">Empty PIT</button><button type="button" class="mini" data-act="reset" title="Like restarting NFD: CS, PIT, FIB, Dead Nonce List and measurements are emptied">Reset node</button>
+      </div>
+      <div class="k">Links</div><div class="lks" id="ndLinks"></div>
+      ${SECTIONS.map(([k, t]) => `<details data-sec="${k}" id="det-${k}"${UI.open.has(k) ? ' open' : ''}><summary id="sum-${k}">${t}</summary><div id="sec-${k}"></div></details>`).join('')}`;
+    $('ndOn').addEventListener('change', e => nodeAction('node', n.id, e.target.checked));
+    $('ndCache').addEventListener('change', e => nodeAction('cs', n.id, e.target.checked));
+    $('ndActs').addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (b) nodeAction(b.dataset.act, n.id); });
+    $('ndLinks').addEventListener('change', e => { const t = e.target; if (t.dataset.id) setLink(t.dataset.id, { on: t.checked }); });
+    $('sec-fib').addEventListener('change', e => { const t = e.target; if (t.classList.contains('rc')) routeEdit(n, +t.dataset.face, t.dataset.origin, +t.value); });
+    $('sec-fib').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.rm) routeRemove(n, +b.dataset.rm, b.dataset.origin);
+      if (b.id === 'rtAdd') routeEdit(n, +$('rtFace').value, 'static', Math.max(0, Math.round(+$('rtCost').value) || 0));
+    });
+    el.querySelectorAll('details').forEach(d => d.addEventListener('toggle', () => { if (d.open) UI.open.add(d.dataset.sec); else UI.open.delete(d.dataset.sec); renderInspector(false); }));
+    UI.inspVer = -1;
+  }
+  $('ndOn').checked = n.on; $('ndCache').checked = n.caching;
+  $('ndState').textContent = n.on ? '' : 'radio off';
+  if (UI.inspVer !== sim.ver) {
+    UI.inspVer = sim.ver;
+    $('ndLinks').innerHTML = linkRows(n).map(l => `<label class="${l.on ? '' : 'off'}"><input type="checkbox" data-id="${l.id}"${l.on ? ' checked' : ''}>${l.a === n.id ? l.b : l.a}</label>`).join('');
+  }
+  const now = sim.now;
+  const set = (k, title, html, show = true) => {
+    $('det-' + k).hidden = !show; $('sum-' + k).textContent = title;
+    if (show && $('det-' + k).open && !$('sec-' + k).contains(document.activeElement)) $('sec-' + k).innerHTML = html();   // do not disturb typing
+  };
+  set('faces', `Faces (${n.faces.length})`, () => `<div class="tbl-scroll"><table class="t"><tr><th>Id</th><th>Kind</th><th>URI</th></tr>${n.faces.map(f => `<tr><td>${f.id}</td><td>${f.kind === 'ucast' ? 'unicast → ' + f.peer : f.kind === 'mcast' ? 'multicast' : 'application'}</td><td>${esc(n.faceUri(f))}</td></tr>`).join('')}</table></div>`);
+  const nhs = n.fibD();
+  set('fib', `FIB ${sim.cfg.prefix} (${nhs.length})`, () => fibEditor(n));
+  const pits = [...n.pit.values()].filter(p => !p.dead);
+  set('pit', `PIT (${pits.length})`, () => pits.length ? `<div class="tbl-scroll"><table class="t"><tr><th>Name</th><th>In</th><th>Out</th></tr>${pits.slice(0, 15).map(p => `<tr><td>${esc(p.name)}</td><td>${[...p.in.keys()].map(id => n.faceName(n.faceById.get(id))).join(', ')}</td><td>${[...p.out.keys()].map(id => n.faceName(n.faceById.get(id))).join(', ')}</td></tr>`).join('')}</table></div>${pits.length > 15 ? `<span class="empty">and ${pits.length - 15} more</span>` : ''}` : '<span class="empty">Empty</span>');
+  set('cs', `Content Store (${n.cs.size})${n.caching ? '' : ', off'}`, () => n.cs.size ? `<div class="empty" style="font-family:var(--font-mono)">${csSummary(n)}</div>` : '<span class="empty">Empty</span>');
+  set('asf', 'ASF measurements', () => n.asf ? `<div class="tbl-scroll"><table class="t"><tr><th>Face</th><th>Status</th><th>SRTT</th><th>RTO</th><th>Timeouts</th></tr>${[...n.asf.faces].map(([fid, f]) => `<tr><td>${n.faceName(n.faceById.get(fid))}</td><td>${f.lastRtt === 'none' ? 'unmeasured' : f.lastRtt === 'timeout' ? 'timed out' : 'working'}</td><td>${f.srtt == null ? '' : ms(f.srtt)}</td><td>${ms(f.rto)}</td><td>${f.nTimeouts}</td></tr>`).join('')}</table></div>` : '<span class="empty">No measurements yet</span>', sim.cfg.strategy === 'asf');
+  set('nlsr', 'NLSR neighbours', () => `<div class="tbl-scroll"><table class="t"><tr><th>Neighbour</th><th>Status</th><th>Missed hellos</th></tr>${[...sim.nlsr.adj].filter(([k]) => k.startsWith(n.id + '>')).map(([k, st]) => `<tr><td>${k.split('>')[1]}</td><td>${st}</td><td>${sim.nlsr.cnt.get(k)}</td></tr>`).join('')}</table></div>`, !!sim.nlsr);
+  set('app', 'Application', () => {
+    if (n.role === 'P') return `<dl class="kv"><dt>Application</dt><dd>producer of ${esc(sim.cfg.prefix)}, ${sim.producer.on ? 'connected' : 'disconnected'}</dd><dt>Data packets served</dt><dd>${sim.producer.served}</dd></dl>`;
+    const a = sim.consumers[n.id];
+    return a ? `<dl class="kv"><dt>Application</dt><dd>${a.kind === 'paced' ? 'segments' : a.kind === 'ping' ? 'ndnping' : 'ndnget'}</dd><dt>Starts at</dt><dd>${sim.cfg.cons[n.id].start} s</dd></dl>` : '<span class="empty">Inactive. Tick it under Consumers.</span>';
+  }, !!n.role);
+  const T = n.c.txT;
+  set('counters', 'Counters', () => `<dl class="kv"><dt>Frames sent: Interest / Data / Nack</dt><dd>${T.I} / ${T.D} / ${T.N}</dd><dt>Frames sent: NLSR</dt><dd>${T.H + T.S + T.L}</dd>
+    <dt>Frames received</dt><dd>${n.c.rx}</dd><dt>Duplicate Interests dropped</dt><dd>${n.c.dupI}</dd><dt>Duplicate or unsolicited Data</dt><dd>${n.c.dupD}</dd><dt>Content Store hits</dt><dd>${n.c.hits}</dd></dl>
+    <div class="tbl-scroll"><table class="t"><tr><th>Link</th><th>Frames</th><th>State</th></tr>${linkRows(n).map(l => `<tr><td>${l.a}–${l.b}</td><td>${l.frames}</td><td>${sim.usable(l) ? 'up' : 'down'}${l.loss ? ', ' + Math.round(l.loss * 100) + '% loss' : ''}</td></tr>`).join('')}</table></div>`);
+}
+
+/* ---------- Readouts ---------- */
+function byNodeText(by, c) { return Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}${k === c ? ' (own)' : ''} ${v}`).join(', ') || '–'; }
+function renderReadouts() {
+  let h = '';
+  for (const c of CONSUMERS) {
+    if (!sim.consumers[c]) { h += `<div class="panel card"><h2 class="h2">Consumer <b>${c}</b></h2><p class="hint">Inactive. Tick ${c} under Consumers to start it.</p></div>`; continue; }
+    const s = sim.consumers[c].summary(), tot = Math.max(1, s.total);
+    const stack = `<div class="stack" aria-hidden="true"><i style="width:${s.prod / tot * 100}%;background:var(--data)"></i><i style="width:${s.cache / tot * 100}%;background:var(--cache)"></i><i style="width:${s.lost / tot * 100}%;background:var(--loss)"></i></div>`;
+    let rows;
+    if (s.kind === 'paced') rows = `<dt>Requested so far</dt><dd>${s.req} / ${s.total}</dd>
+        <dt><span class="sw" style="background:var(--data)"></span>From the producer</dt><dd class="strong">${s.prod}</dd>
+        <dt><span class="sw" style="background:var(--cache)"></span>From a cache</dt><dd class="strong">${s.cache}</dd>
+        <dt>Cache nodes</dt><dd>${byNodeText(s.byNode, c)}</dd>
+        <dt><span class="sw" style="background:var(--loss)"></span>Lost (gave up)</dt><dd class="strong">${s.lost}</dd>
+        <dt>Waiting</dt><dd>${s.pending}</dd><div class="sep"></div>
+        <dt>Retransmissions</dt><dd>${s.retx}</dd><dt>Nacks received</dt><dd>${s.nacks}</dd><dt>Mean delay</dt><dd>${ms(mean(s.rtt))}</dd>`;
+    else if (s.kind === 'ping') {
+      const r = s.rtt, mu = mean(r), mdev = r.length ? Math.sqrt(mean(r.map(x => (x - mu) ** 2))) : NaN;
+      rows = `<dt>Pings sent</dt><dd>${s.sent} / ${s.total}</dd>
+        <dt><span class="sw" style="background:var(--data)"></span>Replies</dt><dd class="strong">${s.recv}</dd>
+        <dt><span class="sw" style="background:var(--loss)"></span>Timeouts</dt><dd class="strong">${s.lost}</dd>
+        <dt>Loss</dt><dd>${s.sent > s.pending ? (s.lost / (s.sent - s.pending) * 100).toFixed(1) : '0.0'}%</dd><div class="sep"></div>
+        <dt>RTT min / avg / max</dt><dd>${r.length ? `${ms(Math.min(...r))} / ${ms(mu)} / ${ms(Math.max(...r))}` : '–'}</dd>
+        <dt>RTT mdev</dt><dd>${ms(mdev)}</dd><dt>Nacks received</dt><dd>${s.nacks}</dd>`;
+    } else rows = `<dt>Segments received</dt><dd>${s.recv} / ${s.total}</dd>
+        <dt><span class="sw" style="background:var(--data)"></span>From the producer</dt><dd class="strong">${s.prod}</dd>
+        <dt><span class="sw" style="background:var(--cache)"></span>From a cache</dt><dd class="strong">${s.cache}</dd>
+        <dt>Cache nodes</dt><dd>${byNodeText(s.byNode, c)}</dd><div class="sep"></div>
+        <dt>Goodput</dt><dd class="strong">${s.goodput.toFixed(2)} Mbit/s</dd><dt>Elapsed</dt><dd>${s.dur.toFixed(2)} s${s.done ? ' (done)' : ''}</dd>
+        <dt>Window (cwnd)</dt><dd>${s.cwnd.toFixed(1)}</dd><dt>Timeouts / retransmissions</dt><dd>${s.timeouts} / ${s.retx}</dd>`;
+    h += `<div class="panel card"><h2 class="h2">Consumer <b>${c}</b></h2>${stack}<dl class="kv">${rows}</dl></div>`;
+  }
+  const st = sim.st, util = sim.now > 0 ? (st.airData + st.airNlsr) / 1e6 / sim.now * 100 : 0;
+  const hits = Object.entries(st.hits).map(([k, v]) => `${k} ${v}`).join(', ') || '–';
+  h += `<div class="panel card"><h2 class="h2">Network <b>${sim.cfg.strategy}</b></h2><dl class="kv">
+      <dt>Interest / Data / Nack frames</dt><dd>${st.frames.I} / ${st.frames.D} / ${st.frames.N}</dd>
+      <dt>NLSR hello / sync / LSA frames</dt><dd>${st.frames.H} / ${st.frames.S} / ${st.frames.L}</dd>
+      <dt>Air time used (data, NLSR)</dt><dd>${util.toFixed(1)}% (${(st.airData / 1e6).toFixed(2)} s, ${(st.airNlsr / 1e6).toFixed(2)} s)</dd>
+      <div class="sep"></div>
+      <dt>Frames lost on a link</dt><dd>${st.lost}</dd><dt>Frames into a broken link</dt><dd>${st.dead}</dd><dt>Frames dropped by a radio that is off</dt><dd>${st.radioOff}</dd>
+      <dt>Overheard and discarded</dt><dd>${st.over}</dd>
+      <dt>Duplicate Interests dropped</dt><dd class="strong">${st.dupI}</dd><dt>Duplicate or unsolicited Data</dt><dd class="strong">${st.dupD}</dd>
+      <dt>Content Store hits</dt><dd>${hits}</dd></dl></div>`;
+  $('readouts').innerHTML = h;
+}
+function renderTimeline() {
+  const app = sim.cfg.app;
+  $('tlTitle').textContent = app === 'transfer' ? 'Throughput' : app === 'ping' ? 'Ping timeline' : 'Segment timeline';
+  $('events').innerHTML = (sim.cfg.events || []).map(e => `<span class="ev${e.done ? ' done' : ''}">${e.done ? '✓' : '○'} ${e.t.toFixed(1)} s ${e.cut ? 'cut ' + e.cut : e.restore ? 'restore ' + e.restore : e.nocache ? 'cache off at ' + e.nocache : 'loss on ' + e.loss}</span>`).join('');
+  if (app === 'transfer') { renderChart(); return; }
+  let h = '';
+  const long = CONSUMERS.some(c => sim.consumers[c] && sim.consumers[c].recs.length > 240);
+  if (long) { renderStrips(app); return; }
+  for (const c of CONSUMERS) {
+    if (!sim.consumers[c]) continue;
+    const cells = sim.consumers[c].recs.map(x => {
+      const cls = x.state === 'done' ? (x.origin === 'p1' ? 'prod' : 'cache') : x.state === 'lost' ? 'lost' : x.state === 'pending' ? 'pending' : '';
+      const tip = `${app === 'ping' ? 'ping' : 'segment'} ${x.seg}: ` + (x.state === 'done' ? `${x.origin === 'p1' ? 'producer' : x.origin === c ? 'own Content Store' : 'cache at ' + x.origin}, ${x.tries} ${x.tries > 1 ? 'tries' : 'try'}, ${ms(x.rtt)}` : x.state === 'wait' ? 'not sent yet' : x.state);
+      return `<span class="cell ${cls}" title="${esc(tip)}">${x.tries > 1 && x.state !== 'wait' ? `<span class="r">${x.tries}</span>` : ''}</span>`;
+    }).join('');
+    h += `<div class="tl-row"><b>${c}</b><div class="cells">${cells}</div></div>`;
+  }
+  h += `<p class="hint">One cell per ${app === 'ping' ? 'ping' : 'segment'}: green from the producer, amber from a cache, red lost, dashed waiting. A number is the count of tries.</p>`;
+  $('tl').innerHTML = h;
+}
+// Long runs: one canvas strip per consumer instead of thousands of cells
+function renderStrips(app) {
+  const css = getComputedStyle(document.documentElement), col = k => css.getPropertyValue(k).trim();
+  const color = { prod: col('--data'), cache: col('--cache'), lost: col('--loss'), pending: col('--muted'), wait: col('--soft') };
+  const ids = CONSUMERS.filter(c => sim.consumers[c]);
+  if (!$('tl').querySelector('canvas') || $('tl').dataset.ids !== ids.join()) {
+    $('tl').dataset.ids = ids.join();
+    $('tl').innerHTML = ids.map(c => `<div class="tl-row"><b>${c}</b><canvas class="tlc" data-c="${c}"></canvas></div>`).join('') +
+      `<p class="hint">One column per ${app === 'ping' ? 'ping' : 'segment'}: green from the producer, amber from a cache, red lost, grey waiting. Hover for details.</p>`;
+    $('tl').querySelectorAll('canvas').forEach(cv => cv.addEventListener('mousemove', e => {
+      const recs = sim.consumers[cv.dataset.c].recs, r = cv.getBoundingClientRect(), i = Math.min(recs.length - 1, Math.floor((e.clientX - r.left) / r.width * recs.length)), x = recs[i];
+      cv.title = `${app === 'ping' ? 'ping' : 'segment'} ${x.seg}: ${x.state === 'done' ? (x.origin === 'p1' ? 'producer' : 'cache at ' + x.origin) + `, ${x.tries} ${x.tries > 1 ? 'tries' : 'try'}, ${ms(x.rtt)}` : x.state}`;
+    }));
+  }
+  $('tl').querySelectorAll('canvas').forEach(cv => {
+    const recs = sim.consumers[cv.dataset.c].recs, dpr = window.devicePixelRatio || 1, W = Math.max(1, cv.clientWidth * dpr), H = 14 * dpr;
+    if (cv.width !== W) { cv.width = W; cv.height = H; }
+    const g = cv.getContext('2d'), w = W / recs.length;
+    g.clearRect(0, 0, W, H);
+    recs.forEach((x, i) => {
+      const k = x.state === 'done' ? (x.origin === 'p1' ? 'prod' : 'cache') : x.state;
+      g.fillStyle = color[k] || color.wait; g.fillRect(i * w, x.state === 'pending' ? H * 0.35 : 0, Math.max(1, w - (w > 3 ? 1 : 0)), x.state === 'pending' ? H * 0.3 : H);
+    });
+  });
+}
+// Throughput chart: goodput per 0.1 s for c1 and c2 (two series, one axis, legend + direct labels, crosshair tooltip)
+function renderChart() {
+  const W = 1000, H = 150, L = 52, R = 40, T = 14, B = 24;
+  const ids = CONSUMERS.filter(c => sim.consumers[c]), apps = ids.map(c => sim.consumers[c]);
+  if (!apps.length) { $('tl').innerHTML = '<p class="hint">No active consumer.</p>'; return; }
+  const series = apps.map(a => Array.from(a.bins, v => (v || 0) * P.get.payload * 8 / CHART_BIN / 1e6));
+  const end = apps.every(a => a.tEnd != null) ? Math.max(...apps.map(a => a.tEnd)) + 0.3 : sim.now;
+  const nBins = Math.max(10, ...series.map(s => s.length), Math.ceil(end / CHART_BIN));
+  for (const s of series) for (let i = 0; i < nBins; i++) if (s[i] == null) s[i] = 0;
+  const maxY = Math.max(1, ...series.map(s => Math.max(...s)));
+  const stepY = maxY > 8 ? 2 : maxY > 4 ? 1 : 0.5, topY = Math.ceil(maxY / stepY) * stepY;
+  const x = i => L + (i + 0.5) / nBins * (W - L - R), y = v => T + (1 - v / topY) * (H - T - B);
+  let g = '';
+  for (let v = 0; v <= topY + 1e-9; v += stepY) g += `<line class="${v === 0 ? 'base' : 'grid'}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  const span = nBins * CHART_BIN, tStep = span > 60 ? 20 : span > 30 ? 10 : span > 10 ? 5 : span > 3 ? 1 : 0.5;
+  for (let t = 0; t <= span + 1e-9; t += tStep) g += `<text class="ax" x="${L + t / span * (W - L - R)}" y="${H - 6}" text-anchor="middle">${+t.toFixed(1)} s</text>`;
+  g += `<text class="ax" x="${L}" y="${T - 4}">Mbit/s</text>`;
+  const colOf = { c1: 'var(--series-1)', c2: 'var(--series-2)' }, cols = ids.map(c => colOf[c]);
+  series.forEach((s, k) => {
+    g += `<polyline fill="none" stroke="${cols[k]}" stroke-width="2" stroke-linejoin="round" points="${s.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`;
+    let li = s.length - 1; while (li > 0 && s[li] === 0) li--;
+    if (s[li] > 0) g += `<text class="ax" x="${Math.min(W - R + 4, x(li) + 6)}" y="${y(s[li]) + 4 + k * 12}" style="fill:var(--ink)">${ids[k]}</text>`;
+  });
+  g += `<line id="chX" class="base" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
+  $('tl').innerHTML = `<div class="legend-inline">${ids.map(c => `<span><i style="background:${colOf[c]}"></i>${c}</span>`).join('')}</div>
+    <div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Goodput of c1 and c2 over time">${g}</svg><div class="tip" id="chTip" hidden></div></div>
+    <p class="hint">Goodput per 0.1 s (1 KB per segment). All frames share one radio medium, as in wmediumd.</p>`;
+  const svg = $('tl').querySelector('svg');
+  svg.addEventListener('pointermove', ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(nBins - 1, Math.floor((px - L) / (W - L - R) * nBins)));
+    const ln = $('chX'), tip = $('chTip'); ln.setAttribute('x1', x(i)); ln.setAttribute('x2', x(i)); ln.setAttribute('visibility', 'visible');
+    tip.hidden = false; tip.textContent = `${(i * CHART_BIN).toFixed(1)}–${((i + 1) * CHART_BIN).toFixed(1)} s   ` + ids.map((c, k) => `${c} ${series[k][i].toFixed(2)}`).join('   ') + ' Mbit/s';
+    tip.style.left = Math.min(r.width - 290, Math.max(0, (x(i) / W) * r.width + 10)) + 'px'; tip.style.top = '24px';
+  });
+  svg.addEventListener('pointerleave', () => { $('chX').setAttribute('visibility', 'hidden'); $('chTip').hidden = true; });
+}
+let lastLogLen = -1, lastLogT = -1;
+function renderLog() {
+  if (sim.logs.length === lastLogLen && sim.now === lastLogT) return;
+  lastLogLen = sim.logs.length; lastLogT = sim.now;
+  $('log').innerHTML = sim.logs.slice(-150).reverse().map(e => `<li class="l${e.cls}"><span class="t">${e.t.toFixed(4)}</span><span class="n">${e.node}</span><span class="m">${esc(e.msg)}</span></li>`).join('');
+}
+function updateChips() {
+  const c = UI.cfg;
+  $('chips').innerHTML = [['strategy', c.strategy], ['layer', c.layer === 'L2' ? 'L2 Ethernet' : 'L3 UDP'], ['faces', c.faces === 'ucast' ? 'unicast' : 'multicast'],
+    ['routing', c.routing], ['app', c.app], ['seed', c.seed]].map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('');
+}
+function renderProfiles() {
+  const rows = PROFILES.map(p => {
+    const m = UI.measured[p.id];
+    const cellW = m ? m.without.map(fmtMeasure).join('\n\n') : '';
+    const cellN = m ? (p.noNlsr ? 'Not applicable: NLSR needs a unicast face per neighbour.' : m.with.map(fmtMeasure).join('\n\n')) : '';
+    return `<tr class="${UI.profile === p.id ? 'cur' : ''}"><td class="n">${esc(p.name)}</td><td>${esc(p.script)}</td><td class="w">${esc(p.why || p.watch)}</td>
+      <td class="m">${esc(cellW)}</td><td class="m">${esc(cellN)}</td><td><button type="button" data-load="${p.id}">Load</button></td></tr>`;
+  }).join('');
+  $('profTable').innerHTML = `<tr><th>Profile</th><th>Script</th><th>Where it fails and why</th><th>Measured without NLSR</th><th>Measured with NLSR</th><th></th></tr>${rows}`;
+}
+function renderSources() {
+  const rows = [
+    ['Radio', '802.11g, fixed 12 Mbit/s for unicast and multicast, ad hoc (IBSS), one radio and one channel per node', 'Mininet-WiFi link settings (bitrates legacy-2.4 12) used by Mini-NDN ad hoc topologies', 'ndn-xscenario decision, JUSTIFICATION_data_rate.md'],
+    ['Frame timing', 'DIFS 34 µs plus frame duration per try; ACK at 1 Mbit/s plus SIFS; backoff cw × 9 µs / 2 on retries, cw from 15 doubling', 'wmediumd', 'wmediumd.c:60-64, 590-680'],
+    ['Shared medium', 'One frame at a time on the whole medium; every station waits for every queued frame, whatever the distance', 'wmediumd', 'wmediumd.c:693-716'],
+    ['Unicast and broadcast', 'Unicast is acknowledged and retried (4 tries); broadcast is sent once without ACK', 'wmediumd, retry counts from the kernel rate control', 'wmediumd.c:635-680; the retry count is an assumption'],
+    ['Loss', 'Per-frame loss rate per link; all tries of a frame share its fade', 'wmediumd with per-frame Nakagami fading (your fork)', 'FACTS.md task 4.5'],
+    ['Range', 'Explicit link list: a pair is in range or not; no positions or propagation model', 'Sketch assumption (replaces Mininet-WiFi positions and the wmediumd propagation model)', ''],
+    ['Overhearing', 'Every node in range hears a unicast frame; it is discarded below NFD unless addressed to it', 'NFD Ethernet capture filter; kernel at L3', 'ethernet-channel.cpp:220-230'],
+    ['Faces', 'Unicast only: one permanent unicast face per configured neighbour, NFD multicast faces off. Multicast only: one ad hoc multicast face (01:00:5e:00:17:aa or 224.0.23.170)', 'NFD configuration set through Mini-NDN (infoedit, nfdc)', 'nfd.conf.sample.in:163-167, 220-222'],
+    ['Strategy scope', 'The chosen strategy is set on the data prefix (default /prod); / keeps best-route; NLSR sets multicast on its own sync and LSA prefixes', 'NFD strategy_choice defaults; Mini-NDN Nfdc.setStrategy; NLSR', 'nfd.conf.sample.in strategy_choice, nlsr.cpp:88-89'],
+    ['Forwarding', 'PIT, duplicate nonce, Dead Nonce List (6 s), Content Store with MustBeFresh, unsolicited Data dropped, Nacks only on unicast faces', 'NFD 24.07', 'forwarder.cpp, algorithm.cpp'],
+    ['Strategies', 'best-route v5, multicast, ASF v5 (probing 60 s, 3 timeouts), self-learning v1 (route 10 min, cost 2048); retransmission suppression 10 to 250 ms', 'NFD 24.07', 'daemon/fw/*.cpp, rib/route.hpp:94'],
+    ['Equal-cost ties', 'Ordered by FaceId', 'Sketch assumption (NFD uses std::sort, ties undefined)', 'fib-entry.cpp:77'],
+    ['Static routes', 'NLSR\'s converged result on the links in range at t = 0, never updated', 'Sketch assumption, matching a routing snapshot', ''],
+    ['NLSR hello', 'Every 60 s per neighbour, timeout 1 s, 3 attempts, then INACTIVE; adjacency LSA built 10 s later; routing calculation 15 s after an LSA', 'NLSR defaults', 'nlsr.conf, hello-protocol.cpp:180-198'],
+    ['NLSR sync and LSAs', 'PSync sync Interest to every neighbour every 30 s plus 0.1 to 0.5 s; sync Data on news; LSA Interest to every neighbour; LSA refresh every 1800 s', 'NLSR with PSync', 'full-producer.cpp:126, full-producer.hpp:223-225, nlsr.cpp:88-89, nlsr.conf'],
+    ['NLSR routing', 'Link-state, link cost from configuration (default 10), at most 3 faces per prefix; loss never changes the cost', 'NLSR, Mini-NDN', 'nlsr.py:47, 265, nlsr.conf'],
+    ['Segments application', '1 Interest per second, lifetime 4 s, retransmission with a new nonce after 1 s, at most 3', 'Study assumption', ''],
+    ['Ping', '1 ping per second, unique names, MustBeFresh, timeout 4 s; server freshness 1 s, no payload', 'ndn-tools ndnping and ndnpingserver', 'ping/client/main.cpp:137-138, ping-server.hpp:40-42'],
+    ['File transfer', 'ndnget CUBIC: initial window 2, beta 0.7, C 0.4, RTO with k = 8 and minimum 200 ms, 15 retries, one decrease per RTT; version discovery skipped', 'ndn-tools ndnget (formerly ndncatchunks)', 'get/options.hpp, main.cpp:63, pipeline-interests-cubic.cpp'],
+    ['Packet sizes', 'Interest 50 B, Data 1150 B (1 KB payload), ping Data 100 B, NLSR 60 to 300 B; plus 36 B of 802.11 header; plus 28 B of IPv4 and UDP at L3', 'Assumption', ''],
+    ['Processing', '0.5 ms per packet per hop in NFD', 'Assumption', ''],
+    ['Below L3', 'Static ARP, no IP routing: UDP faces reach one-hop neighbours only', 'Assumption (ndn-xscenario decision)', ''],
+  ];
+  $('sources').innerHTML = '<tr><th>Property</th><th>Value in the sketch</th><th>Comes from</th><th class="ref">Reference</th></tr>' +
+    rows.map(r => `<tr title="${esc(r[3] ? 'Reference: ' + r[3] : 'No source reference: assumption')}">${r.map((c, i) => `<td${i === 3 ? ' class="ref"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('');
+  $('tgRefs').addEventListener('change', e => $('sources').classList.toggle('hide-ref', !e.target.checked));
+}
+
+/* ---------- Main loop ---------- */
+let lastWall = performance.now(), lastSlow = 0;
+function frame(ts) {
+  const dt = Math.min(0.1, (ts - lastWall) / 1000); lastWall = ts;
+  if (UI.running) advance(dt);
+  renderPackets(); renderFx();
+  $('clock').innerHTML = `t = ${sim.now.toFixed(3)} s <small>${UI.target != null ? `skipping to ${UI.target.toFixed(0)} s` : UI.turbo ? 'fast-forward' : UI.running ? 'running' : 'paused'}</small>`;
+  if (ts - lastSlow > 150) { lastSlow = ts; renderNow(); }
+  requestAnimationFrame(frame);
+}
+
+initControls();
+loadProfile('reference');
+if (location.hash === '#selftest') selftest();
+syncTransport();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
