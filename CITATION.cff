@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software in academic work, please cite it as below."
+type: software
+title: "NDN Web Animation: a conceptual study of NDN forwarding strategies in wireless multi-hop networks"
+abstract: >-
+  A backend-free web animation that shows how the stock NDN forwarding
+  strategies (best-route, ASF, multicast and self-learning) behave on a small
+  wireless multi-hop topology with redundant paths, two consumers and one
+  producer. A seeded discrete-event simulator mirrors the forwarding rules of
+  NFD and the hello and routing timers of NLSR, and counts packets delivered
+  by the producer or by caches, lost and repeated. It is the conceptual
+  groundwork for a new forwarding strategy.
+authors:
+  - family-names: "Fernandes"
+    given-names: "Bruno"
+    email: "bruno.fernandes@tum.de"
+    orcid: "https://orcid.org/0009-0008-5898-9698"
+    affiliation: "Technical University of Munich"
+license: Apache-2.0
+repository-code: "https://github.com/brunosfer/ndn-web-animation"
+keywords:
+  - "Named Data Networking"
+  - "NDN"
+  - "forwarding strategy"
+  - "NFD"
+  - "NLSR"
+  - "wireless ad hoc networks"
+  - "in-network caching"
+  - "simulation"
