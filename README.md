@@ -6,22 +6,22 @@
 
 A conceptual study of how Named Data Networking (NDN) forwarding strategies behave in a wireless multi-hop network, built to show their problems clearly as groundwork for a new forwarding strategy.
 
-The study is a single web page with no backend, the NDN Strategy Lab. It animates a small topology with redundant paths, a producer on the left and two consumers on the right:
+The study is a single web page with no backend, the NDN Strategy Lab. It animates a small topology with redundant paths, two producers on the left and two consumers on the right that mirror each other:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/topology-dark.gif">
-  <img alt="The topology: c1 fetches a segment from producer p1 over four hops, then c2 gets the same segment from the cache at m3" src="docs/topology-light.gif">
+  <img alt="The topology: c1 reads a sensor value from producer p1 over four hops, then c2 gets the same reading from the cache at m3" src="docs/topology-light.gif">
 </picture>
 
-p1–s1 is out of range by default, so m1 is the bottleneck, and c2–s3 costs 12 instead of 10, so c2 shares m3 with c1. A seeded discrete-event simulator mirrors the forwarding rules of NFD 24.07 (PIT, Content Store, Dead Nonce List, best-route, ASF, multicast and self-learning), the hello, sync and LSA traffic of NLSR, the ndnping and ndnget consumers of ndn-tools and the frame timing and shared medium of wmediumd. Every property and its source is listed in the page's "Model and sources" section.
+Each producer and consumer reaches a hub (m1 or m3) and an outer row. The outer links cost 12 and the diagonals to the hubs 10, so the middle row is the main path and the north and south rows are detours, with no equal-cost ties. p2 is off by default. A seeded discrete-event simulator mirrors the forwarding rules of NFD 24.07 (PIT, Content Store, Dead Nonce List, Best Route, ASF, Multicast and Self-Learning), the hello, sync and LSA traffic of NLSR, the ndnping and ndnget consumers of ndn-tools and the frame timing and shared medium of wmediumd. Every property and its source is listed in the page's "Model and sources" section.
 
 ## Run it
 
 Use the link at the top, or clone the repository and open [`web/index.html`](web/index.html) in a browser. It works offline and loads nothing from the network.
 
-* **Profiles** load a scenario with timed events that shows where one strategy fails, for example a broken link, a lossy link or a cache turned off. You can switch strategy and routing (static, NLSR or none) on any profile to compare.
+* **Profiles** load a scenario with timed events that shows where one strategy fails, for example a broken link, a lossy link, a dead neighbour, a producer that leaves, two producers of the same data, a file and a stream sharing the radio and the caches, or a live stream with no time for a retransmission. You can switch strategy and routing (static, NLSR or none) on any profile to compare.
 * **Manual mode** lets you change the network while the animation runs. A table lists every node with its radio switch, its caching switch, buttons that clear its Content Store, FIB or PIT, and a checkbox per link. Clicking a node or a link on the map opens its tables (faces, FIB, PIT, Content Store, ASF, NLSR, counters) and its loss, cost and flapping settings.
-* **Producer and consumers:** p1 can be connected or disconnected at any time and serves a data prefix you can rename. c1 and c2 can each be switched on with their own start time, and run paced segment fetching, ndnping or an ndnget file transfer. The rate slider sets Interests per second, pings per second or ndnget's window (CUBIC or a fixed size).
+* **Applications:** a table lists p1 and p2 (producers), c1 and c2 (consumers) and m2, which can be a relay, a producer or a consumer. Each one is switched on or off, starts at its own time and chooses its kind of data: Sensor (small readings at a fixed frequency), File (ndnget), Stream (a live camera stream with a playout buffer, in the style of NDN-RTC) or Ping (ndnping). Every kind of data in use has its own name, its own strategy and sliders for its data size, frequency and, for the stream, the buffer, the frames asked for ahead, the Interest lifetime and the retransmission timer. Two producers of the same kind serve the same data. The Content Store capacity and a radio queue limit can be set for all nodes.
 * **Transmission efficiency** shows what every frame on the medium was (Interests and Data needed or extra, Nacks, NLSR) and, per node, the Interests and Data sent and received, duplicates, suppressed retransmissions and losses. The map shows each link's cost and what each node's strategy ranks its faces by, for all links or only the path in use.
 * **Measure all profiles** runs every profile with and without NLSR, without animation, and fills the profile table.
 

@@ -37,14 +37,21 @@ if sys.argv[2]:
     with open(sys.argv[2], "w") as f:
         json.dump(data, f, indent=1)
 
+def consumer(c):
+    if c["kind"] == "file":
+        return "{} file {:.2f} Mbit/s timeouts {}".format(c["id"], c["goodput"], c["timeouts"])
+    if c["kind"] == "stream":
+        return "{} stream on time {}/{} late {} missed {} stalls {} retx {}".format(
+            c["id"], c["delivered"], c["total"], c["late"], c["lost"], c["stalls"], c["retx"])
+    return "{} {} {}/{} cache {} lost {} retx {}".format(
+        c["id"], c["kind"], c["delivered"], c["total"], c["cache"], c["lost"], c["retx"])
+
 for profile, runs in data.items():
     for variant in ("without", "with"):
         for m in runs[variant]:
-            if m["app"] == "transfer":
-                detail = "goodput c1 {:.2f} c2 {:.2f} Mbit/s, timeouts {}".format(m["goodput"][0], m["goodput"][1], m["timeouts"])
-            else:
-                detail = "delivered {}/{} (cache {}), lost {}, retransmissions {}".format(
-                    m["prod"] + m["cache"], m["total"], m["cache"], m["lost"], m["retx"])
-            print("{:15} {:14} {:7} {}, frames {} + {} NLSR, duplicates {}".format(
-                profile, m["strategy"], m["routing"], detail, m["dataFrames"], m["nlsrFrames"], m["dupI"]))
+            kinds = m["kinds"]
+            strategy = m["strategy"] if len(kinds) == 1 else "+".join("{}:{}".format(k, v) for k, v in kinds.items())
+            print("{:15} {:14} {:7} {}; frames {} + {} NLSR, duplicates {}".format(
+                profile, strategy, m["routing"], "; ".join(consumer(c) for c in m["per"]),
+                m["dataFrames"], m["nlsrFrames"], m["dupI"]))
 EOF
