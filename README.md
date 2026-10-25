@@ -13,7 +13,11 @@ The study is a single web page with no backend, the NDN Strategy Lab. It animate
   <img alt="The topology: c1 reads a sensor value from producer p1 over four hops, then c2 gets the same reading from the cache at m3" src="docs/topology-light.gif">
 </picture>
 
-Each producer and consumer reaches a hub (m1 or m3) and an outer row. The outer links cost 12 and the diagonals to the hubs 10, so the middle row is the main path and the north and south rows are detours, with no equal-cost ties. p2 is off by default. A seeded discrete-event simulator mirrors the forwarding rules of NFD 24.07 (PIT, Content Store, Dead Nonce List, Best Route, ASF, Multicast and Self-Learning), the hello, sync and LSA traffic of NLSR, the ndnping and ndnget consumers of ndn-tools and the frame timing and shared medium of wmediumd. Every property and its source is listed in the page's "Model and sources" section.
+Each producer and consumer reaches a hub (m1 or m3) and an outer row. The outer links cost 12 and the diagonals to the hubs 10, so the middle row is the main path and the north and south rows are detours, with no equal-cost ties. p2 is off by default. A seeded discrete-event simulator mirrors the forwarding rules of NFD 24.07 (PIT, Content Store, Dead Nonce List, Best Route, ASF, Multicast and Self-Learning), the hello, sync and LSA traffic of NLSR, the ndnping and ndnget consumers of ndn-tools and the frame timing and shared medium of wmediumd. Every property and its source is listed in the page's "Model and sources" section, together with the result of checking it in Mini-NDN-WiFi (version 1.1).
+
+## How faithful it is
+
+Why the Lab was built, how it was checked against Mini-NDN on Mininet-WiFi (setup, number of runs and seeds, criteria) and how closely each metric agrees are summarised in [`docs/validation.md`](docs/validation.md).
 
 ## Run it
 

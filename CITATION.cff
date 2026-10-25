@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software in academic work, please cite it as below."
 type: software
-version: "1.0"
-date-released: 2026-10-24
+version: "1.1"
+date-released: 2026-10-25
 title: "NDN Web Animation: a conceptual study of NDN forwarding strategies in wireless multi-hop networks"
 abstract: >-
   A backend-free web animation that shows how the stock NDN forwarding
@@ -11,7 +11,8 @@ abstract: >-
   consumers. A seeded discrete-event simulator mirrors the forwarding rules of
   NFD and the hello and routing timers of NLSR, and counts packets delivered
   by the producer or by caches, lost and repeated. It is the conceptual
-  groundwork for a new forwarding strategy.
+  groundwork for a new forwarding strategy. Version 1.1 is calibrated against
+  and validated in Mini-NDN on Mininet-WiFi.
 authors:
   - family-names: "Fernandes"
     given-names: "Bruno"

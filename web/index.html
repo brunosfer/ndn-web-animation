@@ -353,7 +353,7 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
         <div class="cons"><label for="inSeed" title="Starting value of the random generator: the same seed repeats a run exactly">Seed</label><input type="number" id="inSeed" min="1" max="99999"></div>
       </div></details>
       <details class="sec" open><summary>Nodes and links</summary><div>
-        <div class="toggles"><label title="Content Store capacity of every node in packets (nfd.conf cs_max_packets, or nfdc cs config capacity while running). Applies at once; the least recently used entries are evicted">CS capacity <input type="number" id="inCsMax" min="1" max="65536" step="1" style="width:84px"> packets per node</label><label title="A frame that would wait longer than this for the shared medium is dropped before it is sent, as a full transmit queue drops under overload. 0 means no limit. Assumption to calibrate">Radio queue limit <input type="number" id="inQueue" min="0" max="10000" step="10" style="width:72px"> ms</label></div>
+        <div class="toggles"><label title="Content Store capacity of every node in packets (nfd.conf cs_max_packets, or nfdc cs config capacity while running). Applies at once; the least recently used entries are evicted">CS capacity <input type="number" id="inCsMax" min="1" max="65536" step="1" style="width:84px"> packets per node</label><label title="Optional: a frame that would wait longer than this for the shared medium is dropped before it is sent. 0 (the default) means no limit: measured in Mini-NDN-WiFi, frames wait instead of being dropped by a time limit, and the sketch matches the emulator best without one">Radio queue limit <input type="number" id="inQueue" min="0" max="10000" step="10" style="width:72px"> ms</label></div>
         <div class="tbl-scroll"><table class="t nodes" id="nodeTable"></table></div>
         <p class="hint">On: the node's radio (off keeps its tables). CS: caching. Clear empties the Content Store or the FIB (the PIT cannot be emptied in NFD). Links: in range or not. Click a node or a link on the map for loss, cost, routes and every table.</p>
       </div></details>
@@ -425,7 +425,8 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
    ====================================================================== */
 const P = {
   app: 0.0002, proc: 0.0005,
-  radio: { rate: 120, ackRate: 10, slot: 9, sifs: 16, difs: 34, cwMin: 15, cwMax: 1023, tries: 4, macHdr: 36, ipUdp: 28 },
+  // rateTable: tries per rate entry that minstrel_ht hands to wmediumd at a fixed 12 Mbit/s (measured: a lost frame uses 2 + 3 + 4 tries)
+  radio: { rate: 120, ackRate: 10, slot: 9, sifs: 16, difs: 34, cwMin: 15, cwMax: 1023, rateTable: [2, 3, 4], macHdr: 36, ipUdp: 28 },
   size: { I: 50, D: 1150, Dping: 100, N: 58, Hreq: 60, Hrep: 200, Sreq: 200, Srep: 300, Lreq: 100, Lrep: 300 },
   lifetime: 4, rto: 1, maxRetx: 3, interval: 1, start: 0.5,
   dnl: 6, csMax: 65536,   // nfd.conf.sample.in:59-63, cs_max_packets 65536, cs_policy lru
@@ -436,7 +437,7 @@ const P = {
   ping: { interval: 1, timeout: 4, freshness: 1 },
   get: { initCwnd: 2, beta: 0.7, C: 0.4, k: 8, minRto: 0.2, maxRto: 60, initRto: 1, retries: 15, payload: 1024 },
   flap: 10,   // default flip period in seconds
-  queueMs: 100,   // a frame that would wait longer than this for the medium is dropped (assumption, see the Model and sources)
+  queueMs: 0,   // optional limit: a frame that would wait longer than this for the medium is dropped; 0 = no limit, as measured in the emulator
   asfLife: 300,   // ASF measurements-lifetime (asf-measurements.hpp:225)
 };
 // Kinds of data. Each producer serves one kind and each consumer asks for one; every kind in use has its own name,
@@ -547,18 +548,22 @@ class Heap {
 }
 // wmediumd pkt_duration (wmediumd.c:60-64), rate in 100 kbit/s
 function pktDurUs(len, rate) { return 20 + 4 * Math.ceil((16 + 8 * len + 6) * 10 / (4 * rate)); }
-// wmediumd: each try costs DIFS + duration; retries add backoff cw*slot/2 (cw doubling); a missing ACK costs the ACK time
+// wmediumd (wmediumd.c:641-680): each try costs DIFS + duration and a missing ACK costs the ACK time; the tries come in
+// rate entries, and backoff (cw*slot/2, cw doubling) is added only for the second and later tries within an entry
 function txTimeUs(len, tries, success, noack) {
   const R = P.radio, dur = pktDurUs(len, R.rate), ackT = pktDurUs(14, R.ackRate) + R.sifs;
   if (noack) return R.difs + dur;
-  let us = 0, cw = R.cwMin;
-  for (let j = 0; j < tries; j++) {
-    us += R.difs + dur;
-    if (j > 0) { us += cw * R.slot / 2; cw = Math.min(R.cwMax, cw * 2 + 1); }
-    if (!(success && j === tries - 1)) us += ackT;
+  let us = 0, cw = R.cwMin, n = 0;
+  for (const count of R.rateTable) {
+    for (let j = 0; j < count && n < tries; j++, n++) {
+      us += R.difs + dur;
+      if (j > 0) { us += cw * R.slot / 2; cw = Math.min(R.cwMax, cw * 2 + 1); }
+      if (!(success && n === tries - 1)) us += ackT;
+    }
   }
   return us;
 }
+const MAX_TRIES = P.radio.rateTable.reduce((a, b) => a + b, 0);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const ms = s => (isNaN(s) ? '–' : (s * 1000).toFixed(s < 0.1 ? 1 : 0) + ' ms');
@@ -1603,9 +1608,9 @@ class Sim {
     return { t0, t1: this.mediumFree + P.proc };
   }
   record(f) { if (this.keepFrames) this.frames.push(f); }
-  // A full transmit queue: a frame that would wait longer than the queue limit for the medium is dropped before it is sent.
-  // Real stations drop under overload instead of delaying frames for seconds (queue management of the Wi-Fi transmit
-  // queues); the limit is an assumption to calibrate.
+  // Optional queue limit: a frame that would wait longer than the limit for the medium is dropped before it is sent.
+  // Off by default (0): measured in Mini-NDN-WiFi, frames wait for the medium and are not dropped by a time limit; the
+  // sender's socket buffers bound the wait there (about 65 to 80 ms per frame under saturating UDP traffic).
   queueFull(from) {
     const lim = this.cfg.queueMs == null ? P.queueMs : this.cfg.queueMs;
     if (!(lim > 0) || this.mediumFree - this.now <= lim / 1000) return false;
@@ -1629,8 +1634,8 @@ class Sim {
     if (this.queueFull(from)) return;
     const l = this.linkMap.get(linkId(from.id, toId)), usable = !!(l && this.usable(l));
     if (l) { l.frames++; this.used(l, from.id, pkt); }
-    // All tries of a frame share its fade (FACTS.md, task 4.5): the frame is lost with the link's loss rate
-    const ok = usable && this.rand() >= l.loss, tries = ok ? 1 : P.radio.tries;
+    // All tries of a frame share one random draw (wmediumd.c:638, 673 in error-probability mode): the frame is lost with the link's loss rate
+    const ok = usable && this.rand() >= l.loss, tries = ok ? 1 : MAX_TRIES;
     if (l) this.activity(l, !ok);
     const { t0, t1 } = this.airtime(pkt, txTimeUs(this.frameBytes(pkt), tries, ok, false));
     this.st.retries += tries - 1;
@@ -1688,12 +1693,12 @@ const PROFILES = [
     links: { 'm2-m3': { loss: 0.3 } },
     script: 'm2–m3 loses 30% of its frames for the whole run.',
     watch: 'Watch the cost near m3 toward m2: after a few timeouts it shows t/o, and ASF keeps the detour for the rest of the run.',
-    why: 'm3 marks its face to m2 timed out at 15.7 s, after three timeouts in a row, and sends c1\'s Interests over a detour from then on; m2–m3 carries only 11 frames in the whole run. c1 needs 5 retransmissions, against 24 with Best Route on the same link. The price is a longer path for the rest of the run, although 70% of the frames would have got through, and a probe every 60 s on the other faces.' },
+    why: 'ASF reacts at the consumer: c1 marks its face to m3 timed out at 7.5 s, after three timeouts in a row, and sends its Interests over n3 and the north row from then on; m2–m3 carries only 15 frames in the whole run. c1 needs 3 retransmissions, against 55 with Best Route on the same link. The price is a longer path for the rest of the run, although 70% of the frames would have got through, and a probe every 60 s on the other faces.' },
   { id: 'asf-dead', name: 'ASF: a dead neighbour is probed forever', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 300 } },
     events: [{ t: 10.2, radio: 'm3', on: false }],
     script: 'm3 switches its radio off at 10.2 s and never comes back. Use Skip 60 s to see the probes.',
     watch: 'Select c1 in the inspector: the face toward m3 stays in the ASF measurements as timed out, and every 60 s a probe is sent into it.',
-    why: 'ASF reacts quickly: c1 and c2 mark their face to m3 timed out at 12.7 s, 2.5 s after the radio goes off, and n3 at 13.7 s, with 9 retransmissions for c1 and 3 for c2. What remains is small but permanent: the nodes next to m3 send a probe into the dead face every 60 s, at four tries of air time each (17 probes in 320 s), and every probe renews the face\'s measurements, so the dead neighbour is never forgotten. Without NLSR nothing removes the routes through m3. With NLSR they disappear between 28 s (at c2) and 77 s (at n3) after the failure and the probes stop, but NLSR keeps sending hellos and sync Interests to m3.' },
+    why: 'ASF reacts quickly: c1 and c2 mark their face to m3 timed out at 12.7 s, 2.5 s after the radio goes off, and n3 at 13.7 s, with 9 retransmissions for c1 and 3 for c2. What remains is small but permanent: the nodes next to m3 send a probe into the dead face every 60 s, at nine tries of air time each (17 probes in the run), and every probe renews the face\'s measurements, so the dead neighbour is never forgotten. Without NLSR nothing removes the routes through m3. With NLSR they disappear between 28 s (at c2) and 77 s (at n3) after the failure and the probes stop, but NLSR keeps sending hellos and sync Interests to m3.' },
   { id: 'mc-cost', name: 'Multicast: robust but expensive', kind: 'sensor', strategy: 'multicast', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
     events: [{ t: 10.2, cut: 'm2-m3' }],
     script: 'm2–m3 goes out of range at 10.2 s. c2 starts 2 s after c1.',
@@ -1708,7 +1713,7 @@ const PROFILES = [
     events: [{ t: 30.2, prod: 'p1', on: false }, { t: 60.2, prod: 'p1', on: true }],
     script: 'The sensor application on p1 disconnects at 30.2 s and connects again at 60.2 s.',
     watch: 'After the disconnect, watch the Network card\'s frame counters and the FIB counters: the learned routes disappear and every Interest is flooded.',
-    why: 'The next Interest reaches p1 without a route and is answered with a NoRoute Nack, which removes the learned route at every hop back to c1. From then on every Interest is a discovery sent to every face. A consumer retransmission overwrites the nonce in the PIT records (NFD keeps only the last nonce per face), so copies of the older nonce still on their way are no longer recognised as duplicates and are flooded again. The floods feed each other: about 8,600 frames per second for the whole outage against 44 before; from 55 s full radio queues start dropping frames, and the storm ends only when p1 connects again at 60.2 s and its Data satisfies the pending Interests. With NLSR the learned routes play no part: Interests follow NLSR\'s routes and p1 rejects each one with a Nack, a seventeenth of the frames (14,203 against 243,157), but the readings of the outage are lost too.' },
+    why: 'The next Interest reaches p1 without a route and is answered with a NoRoute Nack, which removes the learned route at every hop back to c1. From then on every Interest is a discovery sent to every face. A consumer retransmission overwrites the nonce in the PIT records (NFD keeps only the last nonce per face), so copies of the older nonce still on their way are no longer recognised as duplicates and are flooded again. The floods feed each other: about 8,200 frames per second for the whole outage against 44 before, and the storm ends only when p1 connects again at 60.2 s and its Data satisfies the pending Interests. Measured in Mini-NDN-WiFi the same storm happens, at 1,000 to 3,500 frames per second, probably because each hop there takes two to three times longer. With NLSR the learned routes play no part: Interests follow NLSR\'s routes and p1 rejects each one with a Nack, a seventeenth of the frames (14,203 against 245,740), but the readings of the outage are lost too.' },
   { id: 'sl-cache', name: 'Self-Learning: caches hide the route', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 0.3, kinds: { sensor: { count: 30 } },
     script: 'No failures.',
     watch: 'Select c2 in the inspector: its FIB stays empty, and each of its Interests is a discovery sent to every neighbour (c2\'s row in the efficiency table).',
@@ -1721,17 +1726,17 @@ const PROFILES = [
     flaps: { 'm2-m3': 9 },
     script: 'm2–m3 goes out of range and back every 9 s for the whole run. NLSR sends a hello every 60 s.',
     watch: 'Compare the two measured columns, and with NLSR watch the event log for neighbours going INACTIVE and ACTIVE out of step with the link.',
-    why: 'Static routes keep m3 on the link, and every Interest sent while it is out of range needs a retransmission: c1 needs 147 for its 300 readings, half a second of delay on average. NLSR sees the link only through its hellos every 60 s (three missed tries within 2 s make the neighbour INACTIVE, one answer makes it ACTIVE again), so its view has nothing to do with the 9 s flips. m3\'s route points into the broken link for 18 s and around a working link for 132 s out of 306 s. Each change costs a new adjacency LSA, sync and LSA fetches and a routing calculation at every node. NLSR cuts the retransmissions to 18 but adds 1,672 NLSR frames, and its routing is wrong half of the time. A period that divides the hello interval, such as 10 s, always meets the hellos in the same phase and makes NLSR look better than it is.' },
+    why: 'Static routes keep m3 on the link, and every Interest sent while it is out of range needs a retransmission: c1 needs 147 for its 300 readings, half a second of delay on average. NLSR sees the link only through its hellos every 60 s (three missed tries within 2 s make the neighbour INACTIVE, one answer makes it ACTIVE again), so its view has nothing to do with the 9 s flips. m3\'s route points into the broken link for 18 s and around a working link for 132 s out of 306 s. Each change costs a new adjacency LSA, sync and LSA fetches and a routing calculation at every node. NLSR cuts the retransmissions to 18 but adds 1,677 NLSR frames, and its routing is wrong half of the time. A period that divides the hello interval, such as 10 s, always meets the hellos in the same phase and makes NLSR look better than it is.' },
   { id: 'replica', name: 'Two producers of the same data', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, all: true, kinds: { sensor: { count: 60 } },
-    apps: { p2: { on: true } }, events: [{ t: 30.2, prod: 'p1', on: false }],
-    script: 'p1 and p2 both serve the sensor readings. The application on p1 disconnects at 30.2 s; p1 stays on the air as a relay.',
+    apps: { p2: { on: true } }, links: { 'm1-p2': { cost: 12 } }, events: [{ t: 30.2, prod: 'p1', on: false }],
+    script: 'p1 and p2 both serve the sensor readings; m1–p2 costs 12, so p1 is the cheaper producer for everyone (with equal costs the choice would depend on how NFD orders a tie). The application on p1 disconnects at 30.2 s; p1 stays on the air as a relay.',
     watch: 'Watch the producer cards: before 30 s only one producer works, and after it some strategies never reach the other one although it is one hop from m1.',
-    why: 'm1 reaches p1 and p2 at the same cost (10). NFD leaves equal costs undefined; here Best Route always takes p1 (face order), so p2 serves nothing while p1 is up. When p1\'s application leaves, p1 stays on the air as a relay with routes to p2: it sends each Interest on through n1 back to m1, which recognises the loop and answers with a Nack. Every retransmission is again a new Interest for m1, which picks its cheapest face, p1, again. c1 and c2 lose every reading after 30 s (120 Nacks at c1) although p2 is one hop from m1. ASF counts the Nack and moves to p2 at once. Multicast reaches both producers from the start, so p2 answers 60 Interests that p1 also answered (2,670 frames, 750 duplicates). Self-Learning is rejected with a NoRoute Nack, which removes its route, and the next discovery finds p2.' },
+    why: 'm1 reaches p1 at cost 10 and p2 at cost 12, so Best Route takes p1 and p2 serves nothing while p1 is up. When p1\'s application leaves, p1 stays on the air as a relay with routes to p2: it sends each Interest on through n1 back to m1, which recognises the loop and answers with a Nack. Every retransmission is again a new Interest for m1, which picks its cheapest face, p1, again. c1 and c2 lose every reading after 30 s (120 Nacks at c1) although p2 is one hop from m1. ASF counts the Nack and moves to p2 at once. Multicast reaches both producers from the start, so p2 answers 60 Interests that p1 also answered (2,670 frames, 750 duplicates). Self-Learning is rejected with a NoRoute Nack, which removes its route, and the next discovery finds p2. Measured in Mini-NDN-WiFi with the same costs, Best Route loses the same 30 readings with static routes and with NLSR; with both costs at 10, NLSR broke the tie towards p2 and nothing was lost, which is why the costs differ here.' },
   { id: 'two-kinds', name: 'A file and a stream share one radio', kind: 'file', strategy: 'best-route', base: 'static', c2Delay: 0, vary: 'stream',
     apps: { p2: { on: true, kind: 'stream' }, c2: { kind: 'stream' } }, kinds: { stream: { count: 100 } },
     script: 'c1 fetches a 300 KB file from p1 with Best Route; c2 watches p2\'s camera stream at the same time, with the strategy the measured column names.',
     watch: 'Compare c1\'s goodput and c2\'s frames on time when the stream uses Multicast against Best Route: both share one radio medium.',
-    why: 'Alone, c1 fetches its file at 1.70 Mbit/s. With p2\'s stream to c2 at the same time it gets 1.41 Mbit/s when the stream uses Best Route or ASF. With Multicast the stream\'s copies to every next hop fill the radio: full queues drop frames, c1\'s timeouts double ndnget\'s retransmission timer, and the 300 KB file takes 61 s (0.04 Mbit/s), while the stream itself still plays 99 of its 100 frames on time. Self-Learning with static routes copies every Interest too and does the same. Choosing a strategy per kind of data does not isolate the kinds on a shared radio.' },
+    why: 'Alone, c1 fetches its file at 1.70 Mbit/s. With p2\'s stream to c2 at the same time it gets 1.41 Mbit/s when the stream uses Best Route or ASF, and every frame plays. With Multicast the stream\'s copies to every next hop fill the radio: c1\'s file slows to 0.66 Mbit/s and the stream itself plays only 56 of its 100 frames on time (44 late). Self-Learning with static routes copies every Interest too and does worse: 0.37 Mbit/s for the file and 12 of 100 frames on time. Choosing a strategy per kind of data does not isolate the kinds on a shared radio.' },
   { id: 'cache-small', name: 'A stream evicts a sensor from small caches', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0,
     apps: { p2: { on: true, kind: 'stream' }, c2: { kind: 'stream' } }, kinds: { sensor: { count: 150, rate: 5 } }, csMax: 8,
     links: { 'c1-n3': { on: false }, 'c1-m3': { loss: 0.3 } },
@@ -1759,16 +1764,16 @@ const PROFILES = [
     events: [{ t: 10.2, cut: 'm2-m3' }],
     script: 'A low-latency stream: frames play 0.3 s after they are made, and the viewers retransmit after 0.6 s. m2–m3 goes out of range at 10.2 s.',
     watch: 'Watch the timeline after the cut, then lower the retransmission timer under Data in use and restart.',
-    why: 'Frames play 0.3 s after they are made, and the viewers ask for each one 0.2 s before (two frames ahead). After the cut the first Interest of every frame goes into the broken link, and a retransmission would come 0.6 s later, after the playout time, so the viewers do not retransmit at all: with Best Route every frame after the cut is missed (203 of 300), with static routes and with NLSR, which repairs too late for this 30 s run. With a retransmission timer of 0.4 s every frame plays, at the price of 812 retransmissions. ASF moves to a detour after a few timeouts (c2 misses 25 frames in the 2.5 s after the cut), Multicast plays every frame but sends 64,465 frames against 6,420, and Self-Learning is not on the cut path because it learned the north row.' },
+    why: 'Frames play 0.3 s after they are made, and the viewers ask for each one 0.2 s before (two frames ahead). After the cut the first Interest of every frame goes into the broken link, and a retransmission would come 0.6 s later, after the playout time, so the viewers do not retransmit at all: with Best Route every frame after the cut is missed (203 of 300), with static routes and with NLSR, which repairs too late for this 30 s run. With a retransmission timer of 0.4 s every frame plays, at the price of 812 retransmissions. ASF moves to a detour after a few timeouts (c2 misses 4 frames). Multicast reaches the producer over every path, but its copies fill the radio: it sends 67,097 frames against 6,420, and most frames arrive after their playout time (124 and 104 of 300 on time). Self-Learning is not on the cut path because it learned the north row (298 of 300).' },
   { id: 'st-two', name: 'Stream: two viewers on one radio', kind: 'stream', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { stream: { count: 200, size: 8 } },
     script: 'c1 and c2 watch the same camera stream at 8 KB per frame, ten frames a second. No failures.',
     watch: 'Compare the strategies: the PIT merges the two viewers\' Interests, so the second viewer is almost free, unless the strategy copies every Interest.',
-    why: 'The PIT merges the two viewers\' Interests for the same frame, so the second viewer costs little: 16,272 frames with Best Route against 12,800 for one viewer. ASF\'s probes and switches cost 26,533. With Multicast one viewer plays every frame, but two viewers lose almost all: the copies of both viewers\' Interests fill the radio, full queues drop 18,980 frames, and only 16 and 8 of 200 frames play on time. Self-Learning with NLSR routes copies like Multicast and collapses the same way; without routes it learns one path and plays every frame.' },
+    why: 'The PIT merges the two viewers\' Interests for the same frame, so the second viewer costs little: 16,272 frames with Best Route against 12,800 for one viewer. ASF\'s probes and switches cost 26,533. With Multicast one viewer plays every frame (44,864 frames), but two viewers lose almost all: the copies of both viewers\' Interests fill the radio, frames wait for the medium far beyond their playout time, and only 6 and 3 of 200 frames play on time (154,519 frames). Self-Learning with NLSR routes copies like Multicast and collapses the same way (5 and 2); without routes it learns one path and plays every frame.' },
   { id: 'st-sl', name: 'Stream: Self-Learning and a producer that leaves', kind: 'stream', strategy: 'self-learning', base: 'none', c2Delay: 0.3, kinds: { stream: { count: 300 } },
     events: [{ t: 10.2, prod: 'p1', on: false }, { t: 15.2, prod: 'p1', on: true }],
     script: 'The camera on p1 disconnects at 10.2 s and connects again at 15.2 s.',
     watch: 'Watch the frames per second on the Network card while the camera is away, and how long the viewers take to play again after it is back.',
-    why: 'When the camera disconnects at 10.2 s, NoRoute Nacks remove the learned routes, and every Interest for every new frame becomes a discovery flood: about 8,000 frames per second against 600 before. When the camera returns at 15.2 s, c1 learns two routes back and Self-Learning copies every Interest to both. The radio stays full (about 3,200 frames per second), more than a third of the Data c1 receives are duplicates, and until the end of the run most frames arrive after their playout time (2 of 25 on time between 17.5 and 20 s). A 5 s outage costs the rest of the stream.' },
+    why: 'When the camera disconnects at 10.2 s, NoRoute Nacks remove the learned routes, and every Interest for every new frame becomes a discovery flood: about 10,000 frames per second against 600 before. When the camera returns at 15.2 s, the relays learn routes again, but neither viewer does: every one of their Interests stays a discovery sent to every face. The radio stays full (from 11,000 frames per second at the return down to about 2,400 at the end of the run), and no frame plays on time again (none of the 25 frames between 17.5 and 20 s; 97 of 300 in all). A 5 s outage costs the rest of the stream.' },
 ];
 
 /* ======================================================================
@@ -2714,36 +2719,36 @@ function renderProfiles() {
 }
 function renderSources() {
   const rows = [
-    ['Radio', '802.11g, fixed 12 Mbit/s for unicast and multicast, ad hoc (IBSS), one radio and one channel per node', 'Mininet-WiFi link settings (bitrates legacy-2.4 12) used by Mini-NDN ad hoc topologies', 'ndn-xscenario decision, JUSTIFICATION_data_rate.md'],
-    ['Frame timing', 'DIFS 34 µs plus frame duration per try; ACK at 1 Mbit/s plus SIFS; backoff cw × 9 µs / 2 on retries, cw from 15 doubling', 'wmediumd', 'wmediumd.c:60-64, 590-680'],
-    ['Shared medium', 'One frame at a time on the whole medium; every station waits for every queued frame, whatever the distance', 'wmediumd', 'wmediumd.c:693-716'],
-    ['Radio queue limit', 'A frame that would wait more than 100 ms for the medium is dropped before it is sent (adjustable, 0 for no limit)', 'Assumption standing in for the queue management of the Linux Wi-Fi transmit queues; to be calibrated', ''],
-    ['Unicast and broadcast', 'Unicast is acknowledged and retried (4 tries); broadcast is sent once without ACK', 'wmediumd, retry counts from the kernel rate control', 'wmediumd.c:635-680; the retry count is an assumption'],
-    ['Loss', 'Per-frame loss rate per link; all tries of a frame share its fade', 'wmediumd with per-frame Nakagami fading (your fork)', 'FACTS.md task 4.5'],
-    ['Range', 'Explicit link list: a pair is in range or not; no positions or propagation model', 'Sketch assumption (replaces Mininet-WiFi positions and the wmediumd propagation model)', ''],
+    ['Radio', '802.11g, fixed 12 Mbit/s for unicast and multicast, ad hoc (IBSS), one radio and one channel per node', 'Mininet-WiFi link settings (bitrates legacy-2.4 12) used by Mini-NDN ad hoc topologies; one fixed rate so that unicast and multicast frames take the same airtime', 'mn_wifi/link.py:135-136 (set_bitrates)', 'Yes: one ad hoc radio per station at 12 Mbit/s; a saturated medium carries 10.8 Mbit/s of 1.4 KB frames, as wmediumd\'s timing predicts'],
+    ['Frame timing', 'DIFS 34 µs plus frame duration per try; ACK at 1 Mbit/s plus SIFS after a failed try; backoff cw × 9 µs / 2 on the second and later tries of a rate entry, cw from 15 doubling', 'wmediumd', 'wmediumd.c:60-64, 590-680'],
+    ['Shared medium', 'One frame at a time on the whole medium; every station waits for every queued frame, whatever the distance', 'wmediumd', 'wmediumd.c:693-716', 'Yes: one medium for all stations, measured with saturating traffic'],
+    ['Radio queue limit', 'None by default: frames wait for the medium. An optional limit (ms) drops a frame that would wait longer', 'Measured in Mini-NDN-WiFi: no time limit; senders\' socket buffers bound the wait', 'mac80211_hwsim.c:1515-1521, 1590-1600; ethernet-transport.cpp:134-136', 'Partly: the emulator has no time limit; under overload a sender\'s socket buffers fill and frames are dropped, and each frame waits at most 65 to 80 ms (measured). The emulator also loses frames when wmediumd\'s netlink socket overflows, which the sketch does not model. With heavy mixed traffic the sketch matches the emulator better with the limit set to 0'],
+    ['Unicast and broadcast', 'Unicast is acknowledged and retried: a lost frame uses 9 tries, in rate entries of 2, 3 and 4 tries; broadcast is sent once without ACK', 'wmediumd with the retry counts of the kernel\'s rate control (minstrel_ht) at a fixed 12 Mbit/s', 'wmediumd.c:635-680, rc80211_minstrel_ht.c:1393-1462, mac80211_hwsim.c:5293-5294', 'Yes: measured, a lost frame uses 9 tries (2 + 3 + 4); a lost 1 KB frame holds the medium 13.7 ms'],
+    ['Loss', 'Per-frame loss rate per link; all tries of a frame share its fate', 'wmediumd\'s error-probability mode, which draws one random value per frame for all its tries (per-frame Nakagami fading behaves alike)', 'config.c:80-83, wmediumd.c:638, 673', 'Yes: wmediumd\'s error-probability mode draws one value per frame for all its tries; frame loss equals the configured probability'],
+    ['Range', 'Explicit link list: a pair is in range or not; no positions or propagation model', 'Sketch assumption (replaces Mininet-WiFi positions and the wmediumd propagation model)', '', 'Yes: wmediumd\'s error-probability mode with exactly these 20 pairs; every other pair hears nothing (78 of 78 pairs checked)'],
     ['Overhearing', 'Every node in range hears a unicast frame; it is discarded below NFD unless addressed to it', 'NFD Ethernet capture filter; kernel at L3', 'ethernet-channel.cpp:220-230'],
     ['Faces', 'Unicast only: one permanent unicast face per configured neighbour, NFD multicast faces off. Multicast only: one ad hoc multicast face (01:00:5e:00:17:aa or 224.0.23.170)', 'NFD configuration set through Mini-NDN (infoedit, nfdc)', 'nfd.conf.sample.in:163-167, 220-222'],
-    ['Strategy scope', 'The chosen strategy is set on the data prefix (default /prod), and the second prefix has its own; a name takes the strategy of its longest matching prefix; / keeps Best Route; NLSR sets Multicast on its own sync and LSA prefixes', 'NFD strategy_choice defaults; Mini-NDN Nfdc.setStrategy; NLSR', 'nfd.conf.sample.in strategy_choice, strategy-choice.cpp, nlsr.cpp:88-89'],
+    ['Strategy scope', 'Each kind of data in use has its own strategy, set on its name; a name takes the strategy of its longest matching prefix; / keeps Best Route; NLSR sets Multicast on its own sync and LSA prefixes', 'NFD strategy_choice defaults; Mini-NDN Nfdc.setStrategy; NLSR', 'nfd.conf.sample.in strategy_choice, strategy-choice.cpp, nlsr.cpp:88-89'],
     ['Kinds of data', 'Sensor, File, Stream and Ping, each under its own name with its own strategy; FIB lookups by longest prefix match; ASF keeps its measurements per name', 'NFD strategy choice, FIB and measurements tables', 'strategy-choice.cpp, fib.cpp findLongestPrefixMatch, asf-measurements.cpp'],
-    ['Producers', 'p1 and p2 on the left, and optionally m2. Static routes and NLSR route each kind of data to the nearest producer that announces it, the producer itself excluded. A producer that is on at the start is announced, and stays announced while it is disconnected', 'NLSR Name LSAs from the advertising section of nlsr.conf: next hops of every origin router merged, lowest cost per face, best 3', 'name-prefix-table.cpp:68, name-prefix-table-entry.cpp:33-42, nexthop-list.hpp:57-70, fib.cpp:90-99'],
-    ['CS capacity', 'Packets per node, least recently used evicted first, 65,536 by default; can be changed while running', 'nfd.conf cs_max_packets, nfdc cs config capacity', 'nfd.conf.sample.in:59-63, cs-manager.cpp:59-60'],
+    ['Producers', 'p1 and p2 on the left, and optionally m2. Static routes and NLSR route each kind of data to the nearest producer that announces it, the producer itself excluded. A producer that is on at the start is announced, and stays announced while it is disconnected', 'NLSR Name LSAs from the advertising section of nlsr.conf: next hops of every origin router merged, lowest cost per face, best 3', 'name-prefix-table.cpp:68, name-prefix-table-entry.cpp:33-42, nexthop-list.hpp:57-70, fib.cpp:90-99', 'Yes: with two producers Best Route keeps sending to the stopped one (30 of 60 readings, as here), ASF, Multicast and Self-Learning switch to the other'],
+    ['CS capacity', 'Packets per node, least recently used evicted first, 65,536 by default; can be changed while running', 'nfd.conf cs_max_packets, nfdc cs config capacity', 'nfd.conf.sample.in:59-63, cs-manager.cpp:59-60', 'Yes: with 8 packets per node the stream evicts the readings and c1\'s retransmissions reach p1, as here (141 to 144 of 150 readings against 140)'],
     ['Forwarding', 'PIT, duplicate nonce, Dead Nonce List (6 s), Content Store with MustBeFresh, unsolicited Data dropped, Nacks only on unicast faces', 'NFD 24.07', 'forwarder.cpp, algorithm.cpp'],
-    ['Strategies', 'Best Route v5, Multicast, ASF v5 (probing 60 s, 3 timeouts), Self-Learning v1 (route 10 min, cost 2048); retransmission suppression 10 to 250 ms', 'NFD 24.07', 'daemon/fw/*.cpp, rib/route.hpp:94'],
-    ['Equal-cost ties', 'Ordered by FaceId', 'Sketch assumption (NFD uses std::sort, ties undefined)', 'fib-entry.cpp:77'],
-    ['Static routes', 'NLSR\'s converged result on the links in range at t = 0, never updated', 'Sketch assumption, matching a routing snapshot', ''],
-    ['NLSR hello', 'Every 60 s per neighbour, timeout 1 s, 3 attempts, then INACTIVE; adjacency LSA built 10 s later; routing calculation 15 s after an LSA', 'NLSR defaults', 'nlsr.conf, hello-protocol.cpp:180-198'],
-    ['NLSR sync and LSAs', 'PSync sync Interest to every neighbour every 30 s plus 0.1 to 0.5 s; sync Data on news; LSA Interest to every neighbour; LSA refresh every 1800 s', 'NLSR with PSync', 'full-producer.cpp:126, full-producer.hpp:223-225, nlsr.cpp:88-89, nlsr.conf'],
-    ['NLSR routing', 'Link-state, link cost from configuration (default 10), at most 3 faces per prefix; loss never changes the cost', 'NLSR, Mini-NDN', 'nlsr.py:47, 265, nlsr.conf'],
-    ['Sensor', 'One reading per period (100 B by default), named by sequence number and never changed; consumers ask for every reading, lifetime 4 s, retransmission with a new nonce after 1 s, at most 3', 'Study application (in Mini-NDN a small python-ndn producer and consumer)', ''],
-    ['Stream', 'Frames of 1 KB segments at a fixed frequency; the producer holds Interests for frames not made yet; viewers ask a few frames ahead, retransmit until the playout time and play each frame a buffer after it was made', 'Study application in the style of NDN-RTC (in Mini-NDN a python-ndn producer and viewer)', ''],
-    ['Ping', '1 ping per second, unique names, MustBeFresh, timeout 4 s; server freshness 1 s, no payload', 'ndn-tools ndnping and ndnpingserver', 'ping/client/main.cpp:137-138, ping-server.hpp:40-42'],
-    ['File transfer', 'ndnget CUBIC: initial window 2, beta 0.7, C 0.4, RTO with k = 8 and minimum 200 ms, 15 retries, one decrease per RTT; version discovery skipped', 'ndn-tools ndnget (formerly ndncatchunks)', 'get/options.hpp, main.cpp:63, pipeline-interests-cubic.cpp'],
+    ['Strategies', 'Best Route v5, Multicast, ASF v5 (probing 60 s, 3 timeouts), Self-Learning v1 (route 10 min, cost 2048); retransmission suppression 10 to 250 ms', 'NFD 24.07', 'daemon/fw/*.cpp, rib/route.hpp:94', 'Yes: the Self-Learning storm when the producer leaves happens in NFD too (about 3,500 frames per second, about half of the sketch\'s rate); ASF on a stream misreads the producer\'s waiting time and takes the longer rows; Best Route does not fail over to a second producer'],
+    ['Equal-cost ties', 'Ordered by FaceId', 'Sketch assumption (NFD uses std::sort, ties undefined)', 'fib-entry.cpp:77', 'Differs: NLSR broke an equal-cost tie between p1 and p2 the other way; the two-producer profile now gives m1–p2 cost 12, and with it the emulator loses the same readings as here'],
+    ['Static routes', 'NLSR\'s converged result on the links in range at t = 0, never updated', 'Sketch assumption, matching a routing snapshot', '', 'Yes: the same next hops; with the same scenario the emulator needs exactly the same retransmissions (147 and 110 in two profiles) and sends the same number of frames'],
+    ['NLSR hello', 'Every 60 s per neighbour, timeout 1 s, 3 attempts, then INACTIVE; adjacency LSA built 10 s later; routing calculation 15 s after an LSA', 'NLSR defaults', 'nlsr.conf, hello-protocol.cpp:180-198', 'Yes: with a link flipping every 9 s NLSR\'s view runs out of step with the link and m3\'s route is wrong 160 of 310 s (here 150 of 306 s)'],
+    ['NLSR sync and LSAs', 'PSync sync Interest to every neighbour every 30 s plus 0.1 to 0.5 s; sync Data on news; LSA Interest to every neighbour; LSA refresh every 1800 s', 'NLSR with PSync', 'full-producer.cpp:126, full-producer.hpp:223-225, nlsr.cpp:88-89, nlsr.conf', 'Yes: 6,720 NLSR packets in 30 minutes against 6,206 here; 160 per minute in steady state'],
+    ['NLSR routing', 'Link-state, link cost from configuration (default 10), at most 3 faces per prefix; loss never changes the cost', 'NLSR, Mini-NDN', 'nlsr.py:47, 265, nlsr.conf', 'Yes: with the same neighbours and costs NLSR gives c1 the same next hops (m3 40, n3 44), 34 s after the start'],
+    ['Sensor', 'One reading per period (100 B by default), named by sequence number and never changed; consumers ask for every reading, lifetime 4 s, retransmission with a new nonce after 1 s, at most 3', 'Study application (in Mini-NDN a small ndn-cxx producer and consumer)', '', 'Yes: reimplemented on ndn-cxx with the same names and timers; every reading arrives over 4 hops'],
+    ['Stream', 'Frames of 1 KB segments at a fixed frequency; the producer holds Interests for frames not made yet; viewers ask a few frames ahead, retransmit until the playout time and play each frame a buffer after it was made', 'Study application in the style of NDN-RTC (in Mini-NDN an ndn-cxx producer and viewer)', '', 'Yes: reimplemented on ndn-cxx; two viewers get the same frames on time as here (Best Route, ASF, Self-Learning 200 of 200; Multicast collapses)'],
+    ['Ping', '1 ping per second, unique names, MustBeFresh, timeout 4 s; server freshness 1 s, no payload', 'ndn-tools ndnping and ndnpingserver', 'ping/client/main.cpp:137-138, ping-server.hpp:40-42', 'Yes: about 1.3 to 1.5 ms per hop at best, 2.8 ms at the median on the test machine'],
+    ['File transfer', 'ndnget CUBIC: initial window 2, beta 0.7, C 0.4, RTO with k = 8 and minimum 200 ms, 15 retries, one decrease per RTT; version discovery skipped', 'ndn-tools ndnget (formerly ndncatchunks)', 'get/options.hpp, main.cpp:63, pipeline-interests-cubic.cpp', 'Yes: c1 1.8 to 1.9 Mbit/s and c2 from m3\'s cache 6 to 8 Mbit/s (here 1.7 and 8.4), with wmediumd\'s socket loss removed'],
     ['Packet sizes', 'Interest 50 B, Data 1150 B (1 KB payload), sensor Data its size plus 126 B, ping Data 100 B, NLSR 60 to 300 B; plus 36 B of 802.11 header; plus 28 B of IPv4 and UDP at L3', 'Assumption', ''],
-    ['Processing', '0.5 ms per packet per hop in NFD', 'Assumption', ''],
-    ['Below L3', 'Static ARP, no IP routing: UDP faces reach one-hop neighbours only', 'Assumption (ndn-xscenario decision)', ''],
+    ['Processing', '0.5 ms per packet per hop in NFD', 'Assumption', '', 'Yes: the sketch\'s 1.26 ms per hop for a ping equals the emulator\'s best case; virtual machines add wake-up delay on top'],
+    ['Below L3', 'Static ARP, no IP routing: UDP faces reach one-hop neighbours only', 'Assumption: the network layer below NDN adds no routing of its own', ''],
   ];
-  $('sources').innerHTML = '<tr><th>Property</th><th>Value in the sketch</th><th>Comes from</th><th class="ref">Reference</th></tr>' +
-    rows.map(r => `<tr title="${esc(r[3] ? 'Reference: ' + r[3] : 'No source reference: assumption')}">${r.map((c, i) => `<td${i === 3 ? ' class="ref"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('');
+  $('sources').innerHTML = '<tr><th>Property</th><th>Value in the sketch</th><th>Comes from</th><th class="ref">Reference</th><th>Checked in Mini-NDN-WiFi</th></tr>' +
+    rows.map(r => `<tr title="${esc(r[3] ? 'Reference: ' + r[3] : 'No source reference: assumption')}">${[r[0], r[1], r[2], r[3], r[4] || ''].map((c, i) => `<td${i === 3 ? ' class="ref"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('');
   $('tgRefs').addEventListener('change', e => $('sources').classList.toggle('hide-ref', !e.target.checked));
 }
 
