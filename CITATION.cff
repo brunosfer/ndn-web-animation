@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software in academic work, please cite it as below."
 type: software
-version: "1.1"
+version: "1.2"
 date-released: 2026-10-25
 title: "NDN Web Animation: a conceptual study of NDN forwarding strategies in wireless multi-hop networks"
 abstract: >-

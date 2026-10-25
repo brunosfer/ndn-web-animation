@@ -62,6 +62,7 @@ Of the 36 metrics compared, the Lab is within ±5 % of the emulator's median on 
 * [v0.11](https://github.com/brunosfer/ndn-web-animation/tree/v0.11): first public version; the *Model and sources* table lists every modelled property with its source in NFD, NLSR, ndn-tools or `wmediumd`.
 * [v1.0](https://github.com/brunosfer/ndn-web-animation/tree/v1.0): two producers, applications with kinds of data, NLSR sync model.
 * [v1.1](https://github.com/brunosfer/ndn-web-animation/tree/v1.1): the corrections from this validation. A lost frame uses the measured rate table of 2 + 3 + 4 tries, there is no radio queue limit by default, and the two-producer profile no longer depends on an equal-cost tie. The *Model and sources* table gains a column, *Checked in Mini-NDN-WiFi*, with the result for each property.
+* [v1.2](https://github.com/brunosfer/ndn-web-animation/tree/v1.2): interface changes, not a new validation. The Network card shows the air time of the shared medium (NDN, NLSR, idle and queued), the page shows its version with a link to its source, and an air-time figure that counted queued frames as already sent is corrected.
 
 ## A fix in the emulator
 

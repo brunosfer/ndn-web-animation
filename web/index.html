@@ -40,9 +40,11 @@
   --hello: #6d4fc9;
   --dup: #7d8796;
   --route: #2f3b4a;
+  --producer: #ed5400;
+  --consumer: #2563c9;   /* the accent, as the Play button */
   --series-1: #2a78d6;
   --series-2: #eb6834;
-  --use-low: #5b8fd0;
+  --use-low: #b3bcc7;
   --use-high: #1f9d55;
   --use-bad: #d64545;
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -53,28 +55,38 @@
   :root:not([data-theme="light"]) {
     --bg: #0e1319; --panel: #151c24; --ink: #e5eaf0; --muted: #94a1b1; --line: #28323d; --soft: #1c252f;
     --node: #1b232d; --link: #5d6a7a; --accent: #6b9bff; --interest: #6b9bff; --data: #39c08a; --cache: #f0a43a;
-    --loss: #ff6b6b; --nack: #e070c4; --hello: #a58cff; --dup: #7b8695; --route: #c9d3de;
+    --loss: #ff6b6b; --nack: #e070c4; --hello: #a58cff; --dup: #7b8695; --route: #c9d3de; --producer: #fc8642; --consumer: #6b9bff;
     --series-1: #3987e5; --series-2: #d95926;
-    --use-low: #6e9fe0; --use-high: #3cc48c; --use-bad: #ff6b6b;
+    --use-low: #6b7785; --use-high: #3cc48c; --use-bad: #ff6b6b;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e1319; --panel: #151c24; --ink: #e5eaf0; --muted: #94a1b1; --line: #28323d; --soft: #1c252f;
   --node: #1b232d; --link: #5d6a7a; --accent: #6b9bff; --interest: #6b9bff; --data: #39c08a; --cache: #f0a43a;
-  --loss: #ff6b6b; --nack: #e070c4; --hello: #a58cff; --dup: #7b8695; --route: #c9d3de;
+  --loss: #ff6b6b; --nack: #e070c4; --hello: #a58cff; --dup: #7b8695; --route: #c9d3de; --producer: #fc8642; --consumer: #6b9bff;
   --series-1: #3987e5; --series-2: #d95926;
-  --use-low: #6e9fe0; --use-high: #3cc48c; --use-bad: #ff6b6b;
+  --use-low: #6b7785; --use-high: #3cc48c; --use-bad: #ff6b6b;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-ui); padding-inline: 16px; padding-block: 14px 40px; }
 .wrap { max-width: 1360px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+/* Title and subtitle on one line; below them the tags on the left and the settings chips on the right */
+header { display: flex; flex-direction: column; gap: 8px; }
+header .titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+header .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 header h1 { font: 600 26px/1.1 var(--font-display); margin: 0; letter-spacing: .2px; text-wrap: balance; }
 header .sub { color: var(--muted); }
 .tag { font: 600 11px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--cache); border: 1px solid var(--cache); border-radius: 3px; padding: 3px 6px; }
+/* Version of the page, linked to its source: the tag of a tagged version, master otherwise (checked by the mirror script) */
+.tag.ver { display: inline-flex; padding: 0; border: 0; overflow: hidden; text-transform: none; letter-spacing: .02em; text-decoration: none; }
+.tag.ver span { padding: 4px 6px; display: inline-flex; align-items: center; gap: 4px; }
+.tag.ver .k { background: var(--muted); color: var(--panel); }   /* "release" when tagged, "version" otherwise */
+.tag.ver .v { background: var(--accent); color: var(--panel); }
+.tag.ver svg { width: 10px; height: 10px; fill: currentColor; }
+.tag.ver:hover .v { filter: brightness(1.12); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .chip { font: 12px/1 var(--font-mono); background: var(--soft); border-radius: 3px; padding: 5px 7px; color: var(--muted); }
 .chip b { color: var(--ink); font-weight: 600; }
@@ -88,9 +100,17 @@ header .sub { color: var(--muted); }
 .caption { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .caption b { font: 600 15px/1.25 var(--font-display); }
 .caption p { margin: 0; font-size: 13px; color: var(--muted); max-width: 95ch; }
-.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
-.clock { font: 600 15px/1 var(--font-mono); font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
-.clock small { font-weight: 400; color: var(--muted); }
+.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.transport button { padding-inline: 8px; }   /* status, buttons and speeds fit one line */
+/* Its own row under the buttons, centred */
+.clockbox { flex: 1 0 100%; display: flex; align-items: center; justify-content: center; }
+.runstate { width: 7.5em; font: 600 13px/1 var(--font-ui); color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.runstate::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.runstate.running::before { background: var(--data); }
+.runstate.fast::before { background: var(--accent); }
+.clock { font: 13px/1 var(--font-ui); color: var(--muted); white-space: nowrap; display: inline-flex; align-items: baseline; gap: 8px; }
+.clock b { font: 600 15px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.clock small { font: 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 
 button { font: 13px/1 var(--font-ui); color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px; cursor: pointer; }
 button:hover { border-color: var(--muted); }
@@ -201,6 +221,12 @@ table.t td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--soft); verti
 .card h2 b { font: 600 16px/1 var(--font-display); color: var(--ink); letter-spacing: 0; text-transform: none; }
 .stack { display: flex; gap: 2px; height: 10px; border-radius: 2px; overflow: hidden; background: var(--soft); }
 .stack i { display: block; height: 100%; }
+.card.wide { grid-column: 1 / -1; }
+.netcols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 28px; }
+@media (max-width: 1000px) { .netcols { grid-template-columns: minmax(0, 1fr); } }
+.netcols h3 { font: 600 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 2px 0 6px; }
+.airkey { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.airkey b { color: var(--ink); font: 600 12px var(--font-mono); }
 dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 0; font-size: 13px; }
 dl.kv dt { color: var(--muted); }
 dl.kv dd { margin: 0; font: 13px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
@@ -242,10 +268,12 @@ dl.kv .sep { grid-column: 1 / -1; border-top: 1px solid var(--soft); margin: 3px
 .profiles table.t td.w { min-width: 240px; max-width: 42ch; }
 .profiles tr.cur td { background: var(--soft); }
 
-.lower { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.lower { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: stretch; }
 @media (max-width: 1000px) { .lower { grid-template-columns: minmax(0, 1fr); } }
 .log { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.log ol { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; font: 12px/1.5 var(--font-mono); }
+/* The log fills the height of the legend beside it and scrolls; stacked on narrow screens it keeps 300 px */
+.log ol { list-style: none; margin: 0; padding: 0; flex: 1 1 0; min-height: 120px; overflow: auto; font: 12px/1.5 var(--font-mono); }
+@media (max-width: 1000px) { .log ol { flex: none; max-height: 300px; } }
 .log li { display: grid; grid-template-columns: 76px 30px minmax(0, 1fr); gap: 6px; border-bottom: 1px solid var(--soft); padding: 1px 0; }
 .log li .t { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .log li .n { font-weight: 700; }
@@ -275,13 +303,16 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
 .lnk-lab { font: 11px var(--font-mono); fill: var(--muted); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
 .lnk-lab.loss { fill: var(--loss); }
 .nd circle.body { fill: var(--node); stroke: var(--ink); stroke-width: 2; cursor: pointer; }
-.nd.P circle.body { stroke: var(--data); stroke-width: 3.5; }
-.nd.C circle.body { stroke: var(--interest); stroke-width: 3.5; }
+.nd.P circle.body { stroke: var(--producer); stroke-width: 3.5; }
+.nd.C circle.body { stroke: var(--consumer); stroke-width: 3.5; }
 .nd.nocache circle.body { stroke-dasharray: 4 3; }
 .nd.down { opacity: .35; }
 .nd.sel circle.ring { fill: none; stroke: var(--accent); stroke-width: 2; }
 .nd text.id { font: 700 14px var(--font-mono); fill: var(--ink); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .nd text.cap { font: 11px var(--font-ui); fill: var(--muted); text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+.nd text.cap.idle { text-decoration: line-through; stroke: none; }   /* the halo would paint over the line */
+/* Packets and effects pass clicks through to the nodes and links below them */
+#gPk, #gFx { pointer-events: none; }
 .badge text { font: 700 10px var(--font-mono); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .b-cs rect { fill: var(--cache); } .b-cs text { fill: var(--panel); }
 .b-pit rect { fill: var(--interest); } .b-pit text { fill: var(--panel); }
@@ -297,10 +328,15 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
 <body>
 <div class="wrap">
   <header>
-    <h1>NDN Strategy Lab</h1>
-    <span class="sub">Forwarding strategies on a small wireless multi-hop network</span>
+    <div class="titles">
+      <h1>NDN Strategy Lab</h1>
+      <span class="sub">Forwarding strategies / routing in MANETs / FANETs</span>
+    </div>
+    <div class="meta">
     <span class="tag">Research</span>
+    <a class="tag ver" id="ver" data-version="1.2" href="https://github.com/brunosfer/ndn-web-animation/tree/v1.2" title="Source code of release v1.2 on GitHub"><span class="k"><svg viewBox="0 0 10 10" aria-hidden="true"><path fill-rule="evenodd" d="M1 1h4.3l3.9 3.9a.8.8 0 0 1 0 1.1L6 9.2a.8.8 0 0 1-1.1 0L1 5.3zm2.2 1.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>release</span><span class="v">v1.2</span></a>
     <div class="chips" id="chips"></div>
+    </div>
   </header>
 
   <div class="bench">
@@ -316,6 +352,7 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
         <g id="gLinks"></g><g id="gCost"></g><g id="gRoutes"></g><g id="gFx"></g><g id="gNodes"></g><g id="gPk"></g>
       </svg>
       <div class="transport">
+        <span class="runstate" id="runState">Status</span>
         <button class="primary" id="btnPlay">Play</button>
         <button id="btnStep" title="Run to the next event">Step</button>
         <button id="btnReset" title="Restart from t = 0 with the current settings">Restart</button>
@@ -324,7 +361,7 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
         <span class="seg" id="segFF" aria-label="Fast-forward speed"></span>
         <button id="btnSkip60">Skip 60 s</button>
         <button id="btnSkip600">Skip 10 min</button>
-        <span class="clock" id="clock">t = 0.000 s</span>
+        <span class="clockbox"><span class="clock" id="clock">Elapsed Time <b>0.000 s</b><small>0 min 00.000 s</small></span></span>
       </div>
     </div>
       <div class="panel timeline">
@@ -345,14 +382,14 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
         <div class="row"><span>Routing</span><div class="seg" id="segRouting"></div></div>
         <p class="hint" id="routingHint"></p>
       </div></details>
-      <details class="sec" open><summary>Applications</summary><div>
+      <details class="sec"><summary>Applications</summary><div>
         <div class="tbl-scroll"><table class="t apps" id="appTable"></table></div>
         <p class="hint">On: the application starts at its start time. A producer that is off is not deployed, so nothing announces its data; switching it on restarts the run with it. Switching a running producer off or on disconnects or connects it at once. m2 can be a relay, a producer or a consumer.</p>
         <div class="h2" title="Each kind of data in use has its own name, its own strategy (nfdc strategy set) and its own settings">Data in use</div>
         <div id="kinds"></div>
         <div class="cons"><label for="inSeed" title="Starting value of the random generator: the same seed repeats a run exactly">Seed</label><input type="number" id="inSeed" min="1" max="99999"></div>
       </div></details>
-      <details class="sec" open><summary>Nodes and links</summary><div>
+      <details class="sec"><summary>Nodes and links</summary><div>
         <div class="toggles"><label title="Content Store capacity of every node in packets (nfd.conf cs_max_packets, or nfdc cs config capacity while running). Applies at once; the least recently used entries are evicted">CS capacity <input type="number" id="inCsMax" min="1" max="65536" step="1" style="width:84px"> packets per node</label><label title="Optional: a frame that would wait longer than this for the shared medium is dropped before it is sent. 0 (the default) means no limit: measured in Mini-NDN-WiFi, frames wait instead of being dropped by a time limit, and the sketch matches the emulator best without one">Radio queue limit <input type="number" id="inQueue" min="0" max="10000" step="10" style="width:72px"> ms</label></div>
         <div class="tbl-scroll"><table class="t nodes" id="nodeTable"></table></div>
         <p class="hint">On: the node's radio (off keeps its tables). CS: caching. Clear empties the Content Store or the FIB (the PIT cannot be emptied in NFD). Links: in range or not. Click a node or a link on the map for loss, cost, routes and every table.</p>
@@ -363,7 +400,7 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
           <label title="On: every link cost and every face cost. Off: only the costs on the links and faces that carried Interests, Data or Nacks in the last seconds"><input type="checkbox" id="tgCost" checked> Show costs</label>
           <label title="The dark arrows from each node: its best next hop for the data prefix, and dashed its alternatives"><input type="checkbox" id="tgRoutes" checked> Show routes</label>
           <label title="Links that no node has a route over are drawn dotted; the radios are still in range"><input type="checkbox" id="tgDash" checked> Dot links that no route uses</label>
-          <label title="Colours each link by its traffic over the last seconds: blue when hardly used, green when heavily used, towards red when its frames are lost or sent while it is out of range"><input type="checkbox" id="tgUse" checked> Colour links by use</label>
+          <label title="Colours each link by its traffic over the last seconds: light grey when hardly used, green when heavily used, towards red when its frames are lost or sent while it is out of range"><input type="checkbox" id="tgUse" checked> Colour links by use</label>
           <label title="Unicast frames heard by a neighbour they are not addressed to, discarded below NFD"><input type="checkbox" id="tgOver" checked> Show overheard frames</label>
           <label title="The expanding ring of a multicast (broadcast) frame"><input type="checkbox" id="tgRipple" checked> Show broadcast ripples</label>
           <label title="Next to each node: CS entries, PIT entries and FIB next hops for the data prefix, the counts nfdc status and nfdc fib list report"><input type="checkbox" id="tgBadges" checked> Show CS, PIT and FIB counters</label>
@@ -371,7 +408,7 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
         </div>
         <button type="button" class="mini" id="btnDefaults" style="align-self:flex-start" title="Back to the default experiment: scenario, applications, nodes, links and these settings">Reset to defaults</button>
       </div></details>
-      <details class="sec" open id="secInsp"><summary>Inspector</summary><div class="insp" id="insp"></div></details>
+      <details class="sec" id="secInsp"><summary>Inspector</summary><div class="insp" id="insp"></div></details>
     </aside>
   </div>
 
@@ -1604,8 +1641,24 @@ class Sim {
   airtime(pkt, us) {
     const t0 = Math.max(this.now, this.mediumFree);
     this.mediumFree = t0 + us * 1e-6;
-    if ('HSL'.includes(pkt.t)) this.st.airNlsr += us; else this.st.airData += us;
+    if ('HSL'.includes(pkt.t)) this.st.airNlsr += us; else this.st.airData += us;   // booked, including frames still queued
+    this.onAir(t0, this.mediumFree, 'HSL'.includes(pkt.t));
     return { t0, t1: this.mediumFree + P.proc };
+  }
+  // Time each frame actually occupies the medium, in order: queued frames count only once they are on the air
+  onAir(t0, t1, nlsr) {
+    const q = this.airQ || (this.airQ = []), done = this.airDone || (this.airDone = [0, 0]);
+    let i = 0;
+    while (i < q.length && q[i][1] <= this.now) { done[q[i][2] ? 1 : 0] += q[i][1] - q[i][0]; i++; }
+    if (i) q.splice(0, i);
+    if (t1 > t0) q.push([t0, t1, nlsr]);
+  }
+  // Seconds the medium has carried NDN and NLSR frames up to now
+  airUsed() {
+    this.onAir(0, 0, false);
+    const used = [...this.airDone], q = this.airQ;
+    if (q.length && q[0][0] < this.now) used[q[0][2] ? 1 : 0] += Math.min(this.now, q[0][1]) - q[0][0];
+    return { data: used[0], nlsr: used[1], queued: Math.max(0, this.mediumFree - this.now) };
   }
   record(f) { if (this.keepFrames) this.frames.push(f); }
   // Optional queue limit: a frame that would wait longer than the limit for the medium is dropped before it is sent.
@@ -1993,6 +2046,9 @@ function initControls() {
   nt.addEventListener('change', e => { const t = e.target; if (t.dataset.act) nodeAction(t.dataset.act, t.dataset.id, t.checked); });
   nt.addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (b) nodeAction(b.dataset.act, b.dataset.id); });
 
+  $('stage').addEventListener('pointerdown', () => { UI.press = true; });
+  addEventListener('pointerup', () => { UI.press = false; });
+  addEventListener('pointercancel', () => { UI.press = false; });
   $('stage').addEventListener('click', e => {
     const n = e.target.closest('[data-node]'), l = e.target.closest('[data-link]');
     UI.sel = n ? { kind: 'node', id: n.dataset.node } : l ? { kind: 'link', id: l.dataset.link } : null;
@@ -2015,7 +2071,7 @@ function initControls() {
     ['<svg width="22" height="18" viewBox="-11 -9 22 18"><circle r="7" fill="none" stroke="var(--cache)" stroke-width="2.5"/></svg>', 'Content Store hit'],
     ['<svg width="22" height="18" viewBox="-11 -9 22 18"><path d="M-9,0 L6,0" class="rt main" marker-end="url(#ah)"/></svg>', 'Route: best next hop (dashed: alternatives)'],
     ['<svg width="34" height="18" viewBox="-17 -9 34 18"><text class="cost" x="-8" y="0">10</text><text class="cost dyn" x="9" y="0">40</text></svg>', 'Costs: grey in the middle of a link is its configured link cost; darker near a node is what that node\'s strategy ranks the face by (route cost to the data, or ASF\'s smoothed RTT, ? unmeasured, t/o timed out). With "Show costs" off, only the links that carried Interests, Data or Nacks in the last seconds keep their costs'],
-    ['<span class="use-scale"></span>', 'Colour links by use: blue hardly used, green heavily used, red when frames are lost or sent while the link is out of range (last few seconds)'],
+    ['<span class="use-scale"></span>', 'Colour links by use: light grey hardly used, green heavily used, red when frames are lost or sent while the link is out of range (last few seconds)'],
     ['<svg width="34" height="18" viewBox="-17 -9 34 18"><rect x="-16" y="-7" width="32" height="14" rx="3" fill="var(--route)"/><text x="0" y="0" style="font:700 9px var(--font-mono);fill:var(--panel)" text-anchor="middle" dominant-baseline="central">FIB 3</text></svg>', 'FIB next hops for the data the map shows (CS and PIT badges count entries)'],
     ['<svg width="34" height="18" viewBox="-17 -9 34 18"><path d="M-15,0 L15,0" class="lnk noroute"/></svg>', 'Dotted link: in radio range, but no node has a route over it (for example with routing set to None)'],
   ].map(([g, t]) => `<li>${g}<span>${esc(t)}</span></li>`).join('');
@@ -2077,7 +2133,10 @@ function step() { const t = sim.nextTime(); if (t === Infinity) return; sim.runU
 // Skip fast-forwards to the target time at the chosen speed, so counters, tables and timeline can be watched on the way
 function skip(sec) { UI.target = sim.now + sec; UI.turbo = true; UI.running = true; syncTransport(); }
 function skipNow(sec) { sim.quiet = true; sim.runUntil(sim.now + sec); sim.retire(); sim.quiet = false; renderNow(); }
-function renderNow() { if (UI.ver !== sim.ver) renderStatic(); else renderLinks(); renderNodes(); renderRoutes(); renderCosts(); renderReadouts(); renderEfficiency(); renderTimeline(); renderLog(); renderInspector(false); }
+function renderNow() {
+  // The map is redrawn every 150 ms; while a button is held on it, its elements stay, so the click reaches them
+  if (!UI.press) { if (UI.ver !== sim.ver) renderStatic(); else renderLinks(); renderNodes(); renderRoutes(); renderCosts(); }
+  renderReadouts(); renderEfficiency(); renderTimeline(); renderLog(); renderInspector(false); }
 function advance(dt) {
   if (UI.turbo) {
     let to = sim.now + dt * UI.ffRate;
@@ -2259,10 +2318,16 @@ function renderRoutes() {
   }
   $('gRoutes').innerHTML = h;
 }
-// Caption under a producer or consumer: its role, its kind of data when more than one is in use, and whether it is off
+// Caption under a producer or consumer: its role and its kind of data when more than one is in use
 function captionOf(n) {
   const two = sim.prefixes.length > 1, a = sim.cfg.apps[n.id];
-  return (n.role === 'P' ? 'producer' : 'consumer') + (two ? ', ' + KINDS[a.kind].label.toLowerCase() : '') + (a.on ? '' : ', off');
+  return (n.role === 'P' ? 'Producer' : 'Consumer') + (two ? ', ' + KINDS[a.kind].label.toLowerCase() : '');
+}
+// Whether the application is running now: a producer connected, a consumer started and not stopped
+function appRunning(n) {
+  if (n.role === 'P') { const pr = sim.producers.get(n.id); return !!(pr && pr.on); }
+  const a = sim.consumers[n.id], c = sim.cfg.apps[n.id];
+  return !!(a && !a.stopped && sim.now >= (c.start || 0));
 }
 function renderNodes() {
   let h = '';
@@ -2272,7 +2337,7 @@ function renderNodes() {
     h += `<g class="${['nd', n.role || '', n.caching ? '' : 'nocache', n.on ? '' : 'down', sel ? 'sel' : ''].join(' ')}" data-node="${d.id}">`;
     if (sel) h += `<circle class="ring" cx="${A.x}" cy="${A.y}" r="29"/>`;
     h += `<circle class="body" cx="${A.x}" cy="${A.y}" r="23"><title>${d.id}</title></circle><text class="id" x="${A.x}" y="${A.y}">${d.id}</text>`;
-    if (n.role) h += `<text class="cap" x="${A.x}" y="${A.y + (d.row < 1 ? -38 : 44)}">${esc(captionOf(n))}</text>`;
+    if (n.role) h += `<text class="cap${appRunning(n) ? '' : ' idle'}" x="${A.x}" y="${A.y + (d.row < 1 ? -38 : 44)}">${esc(captionOf(n))}</text>`;
     if (!n.caching) h += badge('b-off', A.x + 26, A.y + 24, 'no cache'); else if (n.cs.size && UI.showBadges) h += badge('b-cs', A.x + 26, A.y + 24, 'CS ' + n.cs.size);
     if (n.pit.size && UI.showBadges) h += badge('b-pit', A.x + 26, A.y - 24, 'PIT ' + n.pit.size);
     const nf = n.fibFor(pre).filter(x => x.face.kind !== 'app').length;
@@ -2581,17 +2646,25 @@ function renderReadouts() {
       : stackBar([[s.prod, 'var(--data)'], [s.cache, 'var(--cache)'], [s.late || 0, 'var(--nack)'], [s.lost, 'var(--loss)']], s.total);
     h += `<div class="panel card"><h2 class="h2">Consumer <b>${c}</b></h2>${bar}<dl class="kv"><dt>Data</dt><dd>${KINDS[kind].label} ${esc(s.prefix)}</dd>${consumerRows(s, c, multiProd)}</dl></div>`;
   }
-  const st = sim.st, util = sim.now > 0 ? (st.airData + st.airNlsr) / 1e6 / sim.now * 100 : 0;
+  const st = sim.st, au = sim.airUsed(), air = sim.now, util = air > 0 ? (au.data + au.nlsr) / air * 100 : 0;
   const hits = Object.entries(st.hits).map(([k, v]) => `${k} ${v}`).join(', ') || '–';
-  h += `<div class="panel card"><h2 class="h2">Network <b>${sim.prefixes.map(p => STRAT_LABEL[p.strategy]).join(' + ')}</b></h2><dl class="kv">
-      <dt>Interest / Data / Nack frames</dt><dd>${st.frames.I} / ${st.frames.D} / ${st.frames.N}</dd>
-      <dt>NLSR hello / sync / LSA frames</dt><dd>${st.frames.H} / ${st.frames.S} / ${st.frames.L}</dd>
-      <dt>Air time used (data, NLSR)</dt><dd>${util.toFixed(1)}% (${(st.airData / 1e6).toFixed(2)} s, ${(st.airNlsr / 1e6).toFixed(2)} s)</dd>
-      <div class="sep"></div>
-      <dt>Frames lost on a link</dt><dd>${st.lost}</dd><dt>Frames into a broken link</dt><dd>${st.dead}</dd><dt>Frames dropped by a radio that is off</dt><dd>${st.radioOff}</dd><dt>Frames dropped by a full radio queue</dt><dd>${st.qdrop}</dd>
-      <dt>Overheard and discarded</dt><dd>${st.over}</dd>
-      <dt>Duplicate Interests dropped</dt><dd class="strong">${st.dupI}</dd><dt>Duplicate or unsolicited Data</dt><dd class="strong">${st.dupD}</dd>
-      <dt>Content Store hits</dt><dd>${hits}</dd></dl></div>`;
+  // Air time of the shared medium: NDN frames, NLSR frames and idle, as shares of the time simulated so far
+  const idle = Math.max(0, air - au.data - au.nlsr), sw = c => `<span class="sw" style="background:${c}"></span>`;
+  const share = v => air > 0 ? (v / air * 100).toFixed(1) + '%' : '–';
+  h += `<div class="panel card wide"><h2 class="h2">Network <b>${sim.prefixes.map(p => STRAT_LABEL[p.strategy]).join(' + ')}</b></h2>
+    ${stackBar([[au.data, 'var(--interest)'], [au.nlsr, 'var(--hello)'], [idle, 'transparent']], air)}
+    <div class="airkey"><span>Air time used <b>${util.toFixed(1)}%</b></span><span>${sw('var(--interest)')}NDN frames <b>${share(au.data)}</b> (${au.data.toFixed(2)} s)</span>
+      <span>${sw('var(--hello)')}NLSR <b>${share(au.nlsr)}</b> (${au.nlsr.toFixed(2)} s)</span><span>${sw('var(--soft)')}Idle <b>${share(idle)}</b></span>
+      <span title="Frames already sent to the medium that are still waiting for it">Queued for the medium <b>${au.queued.toFixed(2)} s</b></span></div>
+    <div class="netcols">
+      <div><h3>Traffic</h3><dl class="kv"><dt>Interest / Data / Nack frames</dt><dd>${st.frames.I} / ${st.frames.D} / ${st.frames.N}</dd>
+        <dt>NLSR hello / sync / LSA frames</dt><dd>${st.frames.H} / ${st.frames.S} / ${st.frames.L}</dd></dl></div>
+      <div><h3>Losses</h3><dl class="kv"><dt>Frames lost on a link</dt><dd>${st.lost}</dd><dt>Frames into a broken link</dt><dd>${st.dead}</dd>
+        <dt>Dropped by a radio that is off</dt><dd>${st.radioOff}</dd><dt>Dropped by a full radio queue</dt><dd>${st.qdrop}</dd></dl></div>
+      <div><h3>Waste and caching</h3><dl class="kv"><dt>Duplicate Interests dropped</dt><dd class="strong">${st.dupI}</dd><dt>Duplicate or unsolicited Data</dt><dd class="strong">${st.dupD}</dd>
+        <dt>Overheard and discarded</dt><dd>${st.over}</dd></dl></div>
+    </div>
+    <div class="airkey"><span>Content Store hits <b>${hits}</b></span></div></div>`;
   $('readouts').innerHTML = h;
 }
 function evText(e) {
@@ -2753,12 +2826,22 @@ function renderSources() {
 }
 
 /* ---------- Main loop ---------- */
+// Simulated time as minutes and seconds with milliseconds, e.g. 62 min 05.123 s
+function hms(t) {
+  const ms = Math.round(t * 1e3), m = Math.floor(ms / 6e4), sec = (ms % 6e4) / 1e3;
+  return `${m} min ${sec.toFixed(3).padStart(6, '0')} s`;
+}
 let lastWall = performance.now(), lastSlow = 0;
 function frame(ts) {
   const dt = Math.min(0.1, (ts - lastWall) / 1000); lastWall = ts;
   if (UI.running) advance(dt);
   renderPackets(); renderFx();
-  $('clock').innerHTML = `t = ${sim.now.toFixed(3)} s <small>${UI.target != null ? `skipping to ${UI.target.toFixed(0)} s` : UI.turbo ? 'fast-forward' : UI.running ? 'running' : 'paused'}</small>`;
+  const skipTo = UI.target != null ? `<small>→ ${UI.target.toFixed(0)} s</small>` : '';
+  $('clock').innerHTML = `Elapsed Time <b>${sim.now.toFixed(3)} s</b><small title="Simulated time in minutes and seconds">${hms(sim.now)}</small>${skipTo}`;
+  // Run state, in a pill of fixed width so the buttons never move: "Status" until the run first moves
+  const rs = $('runState'), state = sim.now === 0 && !UI.running ? ['', 'Status', 'Press Play, Step or Skip to start'] : UI.target != null ? ['fast', 'Skipping', `Skipping to ${UI.target.toFixed(0)} s`]
+    : UI.turbo ? ['fast', 'Fast', 'Fast-forward: the simulation runs without drawing packets'] : UI.running ? ['running', 'Running', 'Running'] : ['', 'Paused', 'Paused'];
+  if (rs.textContent !== state[1]) { rs.className = 'runstate ' + state[0]; rs.textContent = state[1]; rs.title = state[2]; }
   if (ts - lastSlow > 150) { lastSlow = ts; renderNow(); }
   requestAnimationFrame(frame);
 }
