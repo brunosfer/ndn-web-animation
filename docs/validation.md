@@ -27,7 +27,7 @@ This is the standalone web version: one page, no backend, no installation. It is
 | Repetitions | emulator runs repeated two to four times where outcomes vary; Lab runs with ten seeds where they depend on random draws |
 | Run lengths | set by the protocols' timers: NLSR for 30 minutes (one LSA refresh period), a stale route for 700 s (beyond its 10-minute lifetime), 1,000 frames per loss level (±3.1 percentage points at 95 %) |
 
-The whole set of 24 profiles, run with and without NLSR (84 runs, 1 h 49 min of network time), completes in 39 s on the same VM, about 170 times faster than real time and with the same result on every run. The emulator needs the full network time of every run, plus start-up and, with NLSR, 34 s of convergence.
+The whole set of 23 profiles, run with and without NLSR (84 runs, 1 h 49 min of network time), completes in 39 s on the same VM, about 170 times faster than real time and with the same result on every run. The emulator needs the full network time of every run, plus start-up and, with NLSR, 34 s of convergence.
 
 ## Results
 
@@ -63,6 +63,7 @@ Of the 36 metrics compared, the Lab is within ±5 % of the emulator's median on 
 * [v1.0](https://github.com/brunosfer/ndn-web-animation/tree/v1.0): two producers, applications with kinds of data, NLSR sync model.
 * [v1.1](https://github.com/brunosfer/ndn-web-animation/tree/v1.1): the corrections from this validation. A lost frame uses the measured rate table of 2 + 3 + 4 tries, there is no radio queue limit by default, and the two-producer profile no longer depends on an equal-cost tie. The *Model and sources* table gains a column, *Checked in Mini-NDN-WiFi*, with the result for each property.
 * [v1.2](https://github.com/brunosfer/ndn-web-animation/tree/v1.2): interface changes, not a new validation. The Network card shows the air time of the shared medium (NDN, NLSR, idle and queued), the page shows its version with a link to its source, and an air-time figure that counted queued frames as already sent is corrected.
+* [v1.3](https://github.com/brunosfer/ndn-web-animation/tree/v1.3): new features, not a new validation; every profile gives the same results as in v1.1. Faces can be unicast and multicast together (each node's unicast faces carry the routes, Self-Learning's discovery uses every face), not yet checked in Mini-NDN-WiFi. After every disruption the page measures the recovery time (also counting first tries only), the recovery effort, the data gap and the strategy's reaction time, and a Key indicators card sums up delivery, timeliness, cost, resilience and reaction ([`metrics.md`](metrics.md)). Manual mode offers wider, more realistic data sizes.
 
 ## A fix in the emulator
 

@@ -20,6 +20,10 @@
   measurements as JSON (used by tests/selftest.sh).
 -->
 <title>NDN Strategy Lab</title>
+<script>
+// A theme chosen with the toggle is remembered in this browser; otherwise the page follows the system setting
+try { const t = localStorage.getItem('ndn-lab-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <style>
 /* Layout: instrument bench. Stage (topology) left, scenario rack right, readouts and profiles below. */
 :root {
@@ -81,6 +85,12 @@ header h1 { font: 600 26px/1.1 var(--font-display); margin: 0; letter-spacing: .
 header .sub { color: var(--muted); }
 .tag { font: 600 11px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--cache); border: 1px solid var(--cache); border-radius: 3px; padding: 3px 6px; }
 /* Version of the page, linked to its source: the tag of a tagged version, master otherwise (checked by the mirror script) */
+/* Light and dark theme toggle: two icon buttons in a pill, the active one raised */
+.themes { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); }
+.themes button { padding: 3px 6px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); line-height: 0; }
+.themes button:hover { color: var(--ink); }
+.themes button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.themes svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .tag.ver { display: inline-flex; padding: 0; border: 0; overflow: hidden; text-transform: none; letter-spacing: .02em; text-decoration: none; }
 .tag.ver span { padding: 4px 6px; display: inline-flex; align-items: center; gap: 4px; }
 .tag.ver .k { background: var(--muted); color: var(--panel); }   /* "release" when tagged, "version" otherwise */
@@ -102,6 +112,13 @@ header .sub { color: var(--muted); }
 .caption p { margin: 0; font-size: 13px; color: var(--muted); max-width: 95ch; }
 .transport { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
 .transport button { padding-inline: 8px; }   /* status, buttons and speeds fit one line */
+/* Media buttons: an icon each, named by their tooltip and aria-label */
+.transport button.icon { min-width: 0; padding: 6px 10px; line-height: 0; }
+.transport button.icon svg { width: 15px; height: 15px; min-height: 0; max-height: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.transport button.icon svg .f { fill: currentColor; stroke: none; }
+.transport button.primary.icon { padding-inline: 16px; }
+/* What the speed buttons mean now: animation speed while playing, events per step while paused */
+.speedlabel { font: 12px/1 var(--font-ui); color: var(--muted); width: 4.6em; text-align: right; cursor: help; }
 /* Its own row under the buttons, centred */
 .clockbox { flex: 1 0 100%; display: flex; align-items: center; justify-content: center; }
 .runstate { width: 7.5em; font: 600 13px/1 var(--font-ui); color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
@@ -224,6 +241,7 @@ table.t td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--soft); verti
 .card.wide { grid-column: 1 / -1; }
 .netcols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 28px; }
 @media (max-width: 1000px) { .netcols { grid-template-columns: minmax(0, 1fr); } }
+.eff .subh { font: 600 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 6px 0 0; }
 .netcols h3 { font: 600 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 2px 0 6px; }
 .airkey { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
 .airkey b { color: var(--ink); font: 600 12px var(--font-mono); }
@@ -333,8 +351,9 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
       <span class="sub">Forwarding strategies / routing in MANETs / FANETs</span>
     </div>
     <div class="meta">
+    <span class="themes" role="group" aria-label="Colour theme"><button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg></button><button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 10.1A5.6 5.6 0 0 1 5.9 2.8a5.6 5.6 0 1 0 7.3 7.3z"/></svg></button></span>
     <span class="tag">Research</span>
-    <a class="tag ver" id="ver" data-version="1.2" href="https://github.com/brunosfer/ndn-web-animation/tree/v1.2" title="Source code of release v1.2 on GitHub"><span class="k"><svg viewBox="0 0 10 10" aria-hidden="true"><path fill-rule="evenodd" d="M1 1h4.3l3.9 3.9a.8.8 0 0 1 0 1.1L6 9.2a.8.8 0 0 1-1.1 0L1 5.3zm2.2 1.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>release</span><span class="v">v1.2</span></a>
+    <a class="tag ver" id="ver" data-version="1.3" href="https://github.com/brunosfer/ndn-web-animation/tree/v1.3" title="Source code of release v1.3 on GitHub"><span class="k"><svg viewBox="0 0 10 10" aria-hidden="true"><path fill-rule="evenodd" d="M1 1h4.3l3.9 3.9a.8.8 0 0 1 0 1.1L6 9.2a.8.8 0 0 1-1.1 0L1 5.3zm2.2 1.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>release</span><span class="v">v1.3</span></a>
     <div class="chips" id="chips"></div>
     </div>
   </header>
@@ -353,11 +372,12 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
       </svg>
       <div class="transport">
         <span class="runstate" id="runState">Status</span>
-        <button class="primary" id="btnPlay">Play</button>
-        <button id="btnStep" title="Run to the next event">Step</button>
-        <button id="btnReset" title="Restart from t = 0 with the current settings">Restart</button>
-        <span class="seg" id="segSpeed" aria-label="Animation speed"></span>
-        <button id="btnTurbo" aria-pressed="false" title="Run the simulation quickly without drawing packets">Fast-forward</button>
+        <button class="primary icon" id="btnPlay" title="Play" aria-label="Play"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="f" d="M4.5 2.5v11l9-5.5z"/></svg></button>
+        <button class="icon" id="btnStep" title="Step: run to the next event (more events per step with the speed buttons while paused)" aria-label="Step"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="f" d="M3 2.5v11l7.5-5.5z"/><rect class="f" x="11" y="2.5" width="2" height="11" rx=".5"/></svg></button>
+        <button class="icon" id="btnReset" title="Restart from t = 0 with the current settings" aria-label="Restart"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 8.6A5.2 5.2 0 1 1 11.6 4.3"/><path d="M12.4 1.6v3.2H9.2"/></svg></button>
+        <span class="speedlabel" id="speedLabel" title="While playing, the buttons set the animation speed. While paused, they set how many events one Step runs.">Speed</span>
+        <span class="seg" id="segSpeed" aria-label="Animation speed, or events per step while paused"></span>
+        <button class="icon" id="btnTurbo" aria-pressed="false" title="Fast-forward: run the simulation quickly without drawing packets" aria-label="Fast-forward"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="f" d="M1.5 3v10l6.2-5zM8.3 3v10l6.2-5z"/></svg></button>
         <span class="seg" id="segFF" aria-label="Fast-forward speed"></span>
         <button id="btnSkip60">Skip 60 s</button>
         <button id="btnSkip600">Skip 10 min</button>
@@ -419,9 +439,11 @@ button.na, button.na:hover { opacity: .4; cursor: not-allowed; border-color: var
     <div class="fate" id="effBar" role="img" aria-label="What the transmitted frames were"></div>
     <div class="chips-k" id="effKey"></div>
     <dl class="effsum" id="effSum"></dl>
+    <h3 class="subh" title="Composed metrics: from the satisfaction ratio of each consumer in 2 s windows and the frames and air time of the whole network">Recovery after a disruption</h3>
+    <div class="tbl-scroll" id="recov"></div>
     <div class="tbl-scroll" id="effPfWrap" hidden><table class="t efft" id="effPf"></table></div>
     <div class="tbl-scroll"><table class="t efft" id="effTable"></table></div>
-    <p class="hint">Minimum Interest frames: for every Data a consumer received, one Interest per hop on the shortest path to the node that served it (producer or cache), with the links in range at that moment. Efficiency is that minimum divided by the Interest frames actually sent, so 100% means no Interest was wasted. Suppressed: retransmissions a node did not forward because they came within the suppression interval. Lost: frames a node sent that no one received.</p>
+    <p class="hint">Minimum Interest frames: for every Data a consumer received, one Interest per hop on the shortest path to the node that served it (producer or cache), with the links in range at that moment. Efficiency is that minimum divided by the Interest frames actually sent, so 100% means no Interest was wasted. Suppressed: retransmissions a node did not forward because they came within the suppression interval. Lost: frames a node sent that no one received. Recovery: for every disruption and consumer, the share of requests satisfied in 2 s windows (segments received for a file); recovered when it stays within 10% of its level before the disruption for 10 s. Extra frames and air time are those of the whole network during the recovery time, beyond its rate before the disruption. On time: the same recovery counting only requests satisfied on the first try. Data gap: from the last Data before the disruption to the first Data of a request sent after it. Reaction: until a request is satisfied on its first try over a path that avoids the failed element, so the strategy has stopped using the lost path; Data that returns over the restored element is not a reaction. Key indicators (card above the Network card): delivery is the share of requests satisfied, timeliness the share satisfied on the first try, cost the frames on the medium per satisfied request, resilience the share of disruption and consumer pairs that recovered, and reaction the share of affected pairs whose strategy found another path. All definitions: <a href="https://github.com/brunosfer/ndn-web-animation/blob/master/docs/metrics.md">docs/metrics.md</a>.</p>
   </div>
 
   <details class="panel assume" id="secProfiles">
@@ -487,12 +509,13 @@ const KINDS = {
       { k: 'count', label: 'Readings per consumer', min: 5, max: 3600, step: 1, def: 60, fmt: v => v }] },
   file: { label: 'File', name: '/files/map', title: 'A file fetched with ndnget in 1 KB segments, with the CUBIC window or a fixed one; shows throughput',
     params: [
-      { k: 'size', label: 'Data size', min: 20, max: 2000, step: 20, def: 300, fmt: v => v + ' KB' },
+      { k: 'size', label: 'Data size', log: [10, 100000], def: 5000, pdef: 300,
+        fmt: v => v >= 1000 ? +(v / 1000).toFixed(v < 10000 ? 1 : 0) + ' MB' : v + ' KB' },
       { k: 'window', label: 'ndnget window', min: 0, max: 64, step: 1, def: 0, fmt: v => (+v === 0 ? 'CUBIC (adaptive)' : 'fixed, ' + v + ' segments') }] },
   stream: { label: 'Stream', name: '/stream/camera', title: 'A live stream in the style of NDN-RTC: the producer makes frames at a fixed frequency; a viewer asks for each frame a few frames ahead (the producer holds those Interests until the frame exists), retransmits while the frame can still be played and plays it after a buffer',
     params: [
-      { k: 'size', label: 'Data size', min: 1, max: 32, step: 1, def: 4, fmt: v => v + ' KB per frame (1 KB segments)' },
-      { k: 'rate', label: 'Frequency', min: 1, max: 30, step: 1, def: 10, fmt: v => v + ' frames per s' },
+      { k: 'size', label: 'Data size', min: 1, max: 64, step: 1, def: 2, pdef: 4, fmt: v => v + ' KB per frame (1 KB segments)' },
+      { k: 'rate', label: 'Frequency', min: 1, max: 60, step: 1, def: 30, pdef: 10, fmt: v => v + ' frames per s' },
       { k: 'count', label: 'Frames per viewer', min: 10, max: 18000, step: 10, def: 300, fmt: v => v },
       { k: 'buffer', label: 'Playout buffer', min: 0.05, max: 3, step: 0.05, def: 0.5, fmt: v => ms(+v) + ' after the frame is made' },
       { k: 'ahead', label: 'Frames asked for ahead', min: 0, max: 20, step: 1, def: 2, fmt: v => v + (+v === 1 ? ' frame' : ' frames') },
@@ -533,9 +556,10 @@ const PROD_ORDER = ['p1', 'p2', 'm2'], CONS_ORDER = ['c1', 'c2', 'm2'];
 const STRAT_KEYS = ['best-route', 'asf', 'multicast', 'self-learning'];
 // A name is under a prefix when the prefix is a whole number of its components
 const under = (name, pre) => name === pre || name.startsWith(pre + '/');
-// The kinds of data in use: those a producer or consumer row has chosen, each with its name and strategy (nfdc strategy set)
+// The kinds of data in use: those a producer or consumer row that is switched on has chosen, each with its name and
+// strategy (nfdc strategy set). A row that is off adds nothing; switching it on restarts the run with its data.
 function prefixesOf(cfg) {
-  return KIND_ORDER.filter(k => APP_NODES.some(id => cfg.apps[id].role !== 'R' && cfg.apps[id].kind === k))
+  return KIND_ORDER.filter(k => APP_NODES.some(id => cfg.apps[id].on && cfg.apps[id].role !== 'R' && cfg.apps[id].kind === k))
     .map(k => ({ i: k, kind: k, name: cfg.kinds[k].name, strategy: cfg.kinds[k].strategy }));
 }
 function roleOf(cfg, id) { const a = cfg.apps[id]; return a && a.role !== 'R' ? a.role : null; }
@@ -925,8 +949,11 @@ class Node {
   }
   addFace(f) { f.id = 256 + this.faces.length; this.faces.push(f); this.faceById.set(f.id, f); return f; }
   setup() {
-    if (this.sim.cfg.faces === 'mcast') this.mcast = this.addFace({ kind: 'mcast', linkType: 'adhoc', local: false });
-    else for (const [a, b] of LINK_DEFS) {
+    // Faces: 'ucast' one unicast face per neighbour; 'mcast' one ad hoc multicast face; 'both' the multicast face and
+    // the unicast faces (face policy P3: routes use the unicast faces, Self-Learning's discovery uses every face)
+    const faces = this.sim.cfg.faces;
+    if (faces !== 'ucast') this.mcast = this.addFace({ kind: 'mcast', linkType: 'adhoc', local: false });
+    if (faces !== 'mcast') for (const [a, b] of LINK_DEFS) {
       if (a === this.id) this.addFace({ kind: 'ucast', peer: b, linkType: 'p2p', local: false });
       else if (b === this.id) this.addFace({ kind: 'ucast', peer: a, linkType: 'p2p', local: false });
     }
@@ -1027,7 +1054,7 @@ class Node {
     this.sim.effect('hit', this.id);
     this.log(`Content Store hit ${I.name}`, 'C');
     pit.sat = true; pit.fresh = D.fresh; this.setExpiry(pit, 0);
-    pit.S.afterContentStoreHit(this, Object.assign({}, D, { origin: this.id, pa: false }), face, pit);
+    pit.S.afterContentStoreHit(this, Object.assign({}, D, { origin: this.id, pa: false, path: [] }), face, pit);
   }
   onCsMiss(face, I, pit) {
     const now = this.sim.now;
@@ -1074,7 +1101,7 @@ class Node {
     pit.sat = true; pit.fresh = D.fresh;
     pit.out.delete(face.id);
   }
-  sendData(D, face, pit) { if (pit) pit.in.delete(face.id); this.transmit(face, Object.assign({}, D)); }
+  sendData(D, face, pit) { if (pit) pit.in.delete(face.id); this.transmit(face, Object.assign({}, D, { path: (D.path || []).concat(this.id) })); }   // path: for the reaction time only
   sendDataToAll(D, pit, inFace) {
     const now = this.sim.now, set = [];
     for (const [fid, r] of pit.in) {
@@ -1141,7 +1168,7 @@ class PacedApp {
     const rec = this.recs[pkt.seg]; if (!rec) return;
     if (pkt.t === 'N') { this.nacks++; return; }
     if (pkt.t !== 'D' || rec.state !== 'pending') return;
-    rec.state = 'done'; rec.origin = pkt.origin; rec.rtt = this.node.sim.now - rec.t0;
+    rec.state = 'done'; rec.origin = pkt.origin; rec.rtt = this.node.sim.now - rec.t0; rec.at = this.node.sim.now; rec.path = pkt.path;
     this.ideal = (this.ideal || 0) + this.node.sim.hopDist(this.node.id, pkt.origin);
     const isProd = this.node.sim.producers.has(pkt.origin);
     const from = isProd ? `producer ${pkt.origin}` : pkt.origin === this.node.id ? 'its own Content Store' : `cache at ${pkt.origin}`;
@@ -1189,7 +1216,7 @@ class PingApp {
     const rec = this.byName.get(pkt.name); if (!rec) return;
     if (pkt.t === 'N') { this.nacks++; return; }
     if (pkt.t !== 'D' || rec.state !== 'pending') return;
-    rec.state = 'done'; rec.origin = pkt.origin; rec.rtt = this.node.sim.now - rec.t0;
+    rec.state = 'done'; rec.origin = pkt.origin; rec.rtt = this.node.sim.now - rec.t0; rec.at = this.node.sim.now; rec.path = pkt.path;
     this.ideal = (this.ideal || 0) + this.node.sim.hopDist(this.node.id, pkt.origin);
     this.node.log(`ping reply ${pkt.name} in ${ms(rec.rtt)}`, 'D');
   }
@@ -1213,7 +1240,7 @@ class TransferApp {
     this.cwnd = P.get.initCwnd; this.ssthresh = Infinity; this.wmax = 0; this.lastWmax = 0; this.lastDecrease = 0;
     this.inFlight = 0; this.next = 0; this.retxQ = []; this.highData = -1; this.highInterest = -1; this.recPoint = -1;
     this.srtt = null; this.rttvar = null; this.rto = P.get.initRto; this.received = 0; this.timeouts = 0; this.retx = 0; this.nacks = 0;
-    this.t0 = null; this.tEnd = null; this.failed = false; this.bins = []; this.byNode = {}; this.byProd = {}; this.prod = 0; this.cache = 0;
+    this.t0 = null; this.tEnd = null; this.failed = false; this.bins = []; this.binsFirst = []; this.byNode = {}; this.byProd = {}; this.prod = 0; this.cache = 0;
     this.prefix = k.name;
     this.fixed = k.window > 0 ? Math.round(k.window) : 0;   // ndnget --pipeline-type fixed --pipeline-size N
     if (this.fixed) this.cwnd = this.fixed;
@@ -1256,10 +1283,11 @@ class TransferApp {
       else { this.rttvar = 0.75 * this.rttvar + 0.25 * Math.abs(this.srtt - rtt); this.srtt = 0.875 * this.srtt + 0.125 * rtt; }
       this.rto = Math.min(P.get.maxRto, Math.max(P.get.minRto, this.srtt + P.get.k * this.rttvar));
     }
-    s.state = 'done'; s.origin = pkt.origin; this.received++;
+    s.state = 'done'; s.origin = pkt.origin; this.received++; s.at = sim.now; s.path = pkt.path;
     this.ideal = (this.ideal || 0) + sim.hopDist(this.node.id, pkt.origin);
     countOrigin(sim, this, pkt.origin);
     const b = Math.floor(sim.now / CHART_BIN); this.bins[b] = (this.bins[b] || 0) + 1;
+    if (s.retx === 0) this.binsFirst[b] = (this.binsFirst[b] || 0) + 1;   // received without a retransmission
     this.highData = Math.max(this.highData, k);
     this.increase();
     if (this.received === this.N) { this.tEnd = sim.now; this.node.log(`ndnget finished in ${(this.tEnd - this.t0).toFixed(2)} s`, 'D'); return; }
@@ -1331,6 +1359,7 @@ class StreamApp {
     if (!rec.origin || sim.producers.has(pkt.origin)) rec.origin = pkt.origin;   // from a producer if any segment came from one
     if (rec.got < this.S) return;
     rec.rtt = sim.now - rec.frame / this.k.rate;   // frame delay, from the moment the frame was made
+    rec.at = sim.now; rec.path = pkt.path;
     rec.state = rec.state === 'lost' ? 'late' : 'done';
     if (rec.state === 'late') this.node.log(`frame ${rec.frame} complete ${ms(sim.now - this.deadline(rec))} after its playout time`, 'X');
   }
@@ -1368,7 +1397,7 @@ class ProducerApp {
     if (on === this.on) return;
     this.on = on;
     const n = this.node, names = this.prefixes.join(' and ');
-    if (on) { for (const pre of this.prefixes) n.addRoute(pre, n.appFace.id, 'app', 0, Infinity); n.log(`producer serves ${names}`, 'D'); }
+    if (on) { this.everOn = true; for (const pre of this.prefixes) n.addRoute(pre, n.appFace.id, 'app', 0, Infinity); n.log(`producer serves ${names}`, 'D'); }
     else { n.routes = n.routes.filter(r => r.origin !== 'app'); n.log(`producer disconnected, ${names} unregistered`, 'X'); }
     n.sim.ver++;
   }
@@ -1538,6 +1567,8 @@ class Sim {
     this.cfg = cfg; this.rand = mulberry32((cfg.seed >>> 0) || 1); this.q = new Heap(); this.now = 0; this.mediumFree = 0;
     this.frames = []; this.fx = []; this.logs = []; this.quiet = false; this.keepFrames = true; this.noLog = false;
     this.st = { frames: { I: 0, D: 0, N: 0, H: 0, S: 0, L: 0 }, lost: 0, dead: 0, radioOff: 0, qdrop: 0, retries: 0, over: 0, dupI: 0, dupD: 0, hits: {}, airData: 0, airNlsr: 0, pf: {} };
+    // Frames and air time per 0.5 s, and the disruptions of the run, for the recovery metrics
+    this.series = { dt: 0.5, frames: [], air: [] }; this.disruptions = [];
     this.prefixes = prefixesOf(cfg);
     for (const p of this.prefixes) this.st.pf[p.name] = { I: 0, D: 0, N: 0 };
     this.links = LINK_DEFS.map(([a, b]) => {
@@ -1555,7 +1586,7 @@ class Sim {
     for (const id of this.consIds) { const a = cfg.apps[id]; if (a.on) this.consumers[id] = new APPS[a.kind](this.nodes.get(id), a.start); }
     this.ver = 0;
     if (cfg.routing === 'static') this.installStatic();
-    this.nlsr = cfg.routing === 'nlsr' && cfg.faces === 'ucast' ? new Nlsr(this) : null;
+    this.nlsr = cfg.routing === 'nlsr' && cfg.faces !== 'mcast' ? new Nlsr(this) : null;   // NLSR needs a unicast face per neighbour
     for (const id of cfg.flaps.keys()) this.scheduleFlap(id);
     for (const e of cfg.events || []) this.at(e.t, () => this.applyEvent(e));
     const purge = () => { for (const n of this.nodes.values()) for (const [k, v] of n.dnl) if (v <= this.now) n.dnl.delete(k); this.after(60, purge); };
@@ -1568,15 +1599,22 @@ class Sim {
   originsOf(i) { return [...this.producers].filter(([, a]) => a.deployed && a.kind === i).map(([id]) => id); }
   consumerPrefix(id) { return this.cfg.kinds[this.cfg.apps[id].kind].name; }
   installStatic() {
-    if (this.cfg.faces === 'ucast') {
+    if (this.cfg.faces !== 'mcast') {   // routes on the unicast faces, also when a multicast face exists (P3)
       const inRange = new Set(this.links.filter(l => l.on).map(l => l.id)), isUp = (a, b) => inRange.has(linkId(a, b));
       for (const n of this.nodes.values()) n.setRoutes('static', prefixRoutes(this, n.id, isUp));
     } else for (const n of this.nodes.values()) {
       n.setRoutes('static', this.prefixes.filter(p => this.originsOf(p.i).some(o => o !== n.id)).map(p => ({ prefix: p.name, faceId: n.mcast.id, cost: 10 })));
     }
   }
+  // A disruption: a change that can cost consumers data, scripted or made by hand; recovery is measured from it
+  disrupt(what, el) { this.disruptions.push({ t: this.now, what, el: el || null }); }   // el: { link | node | prod | cache: id }
   applyEvent(e) {
     e.done = true;
+    if (e.cut) this.disrupt(`link ${e.cut.replace('-', '–')} out of range`, { link: e.cut });
+    if (e.loss && e.value > 0) this.disrupt(`loss ${Math.round(e.value * 100)}% on ${e.loss.replace('-', '–')}`, { link: e.loss });
+    if (e.nocache) this.disrupt(`caching off at ${e.nocache}`, { cache: e.nocache });
+    if (e.radio && !e.on) this.disrupt(`radio of ${e.radio} off`, { node: e.radio });
+    if (e.prod && !e.on && this.producers.has(e.prod)) this.disrupt(`producer ${e.prod} disconnects`, { prod: e.prod });
     if (e.cut || e.restore) { const l = this.linkMap.get(e.cut || e.restore); l.on = !!e.restore; this.log(l.a, `scripted: link ${l.a}–${l.b} ${l.on ? 'back in range' : 'out of range'}`, l.on ? 'U' : 'X'); }
     if (e.loss) { const l = this.linkMap.get(e.loss); l.loss = e.value; this.log(l.a, `scripted: link ${l.a}–${l.b} loss ${Math.round(e.value * 100)}%`, 'X'); }
     if (e.nocache) { this.nodes.get(e.nocache).caching = false; this.log(e.nocache, 'scripted: caching off', 'X'); }
@@ -1585,12 +1623,27 @@ class Sim {
     if (e.stop && this.consumers[e.stop] && this.consumers[e.stop].stop) this.consumers[e.stop].stop();
     this.ver++;
   }
+  // Whether an exchange is under way over a link: either end has an Interest forwarded towards the other (on its unicast
+  // face to it, or on its multicast face) whose Data has not come back yet
+  carrying(l) {
+    for (const [x, y] of [[l.a, l.b], [l.b, l.a]]) {
+      const n = this.nodes.get(x), faces = [n.faceTo(y), n.mcast].filter(Boolean).map(f => f.id);
+      for (const pit of n.pit.values()) {
+        if (pit.sat || pit.dead) continue;
+        for (const fid of faces) { const o = pit.out.get(fid); if (o && o.expiry >= this.now && !o.nack) return true; }
+      }
+    }
+    return false;
+  }
   scheduleFlap(id) {
     this.flapGen = this.flapGen || {};
     const gen = this.flapGen[id] = (this.flapGen[id] || 0) + 1;
     const tick = () => {
       if (!this.cfg.flaps.has(id) || this.flapGen[id] !== gen) return;
-      const l = this.linkMap.get(id); l.on = !l.on; this.ver++;
+      const l = this.linkMap.get(id);
+      // A flip out of range is a disruption only when it cuts an exchange under way over the link
+      if (l.on && this.carrying(l)) this.disrupt(`link ${l.a}–${l.b} flipped out of range`, { link: id });
+      l.on = !l.on; this.ver++;
       this.log(l.a, `link ${l.a}–${l.b} ${l.on ? 'back in range' : 'out of range'} (flips every ${this.cfg.flaps.get(id)} s)`, l.on ? 'U' : 'X');
       this.after(this.cfg.flaps.get(id), tick);
     };
@@ -1626,6 +1679,7 @@ class Sim {
   used(l, from, pkt) { if ('IDN'.includes(pkt.t)) { l.lastUse = this.now; (l.useFrom || (l.useFrom = {}))[from] = this.now; } }
   sent(from, pkt) {
     from.c.tx++; from.c.txT[pkt.t]++; this.st.frames[pkt.t]++;
+    const b = Math.floor(this.now / this.series.dt); this.series.frames[b] = (this.series.frames[b] || 0) + 1;
     if (this.prefixes.length > 1 && 'IDN'.includes(pkt.t)) { const pre = this.prefixOf(pkt.name); if (pre) this.st.pf[pre][pkt.t]++; }
   }
   deliver(toId, t, fn) { const n = this.nodes.get(toId); if (!n.on) return; n.c.rx++; n.c.rxT[t]++; fn(); }
@@ -1643,6 +1697,7 @@ class Sim {
     this.mediumFree = t0 + us * 1e-6;
     if ('HSL'.includes(pkt.t)) this.st.airNlsr += us; else this.st.airData += us;   // booked, including frames still queued
     this.onAir(t0, this.mediumFree, 'HSL'.includes(pkt.t));
+    const b = Math.floor(t0 / this.series.dt); this.series.air[b] = (this.series.air[b] || 0) + us * 1e-6;
     return { t0, t1: this.mediumFree + P.proc };
   }
   // Time each frame actually occupies the medium, in order: queued frames count only once they are on the air
@@ -1718,111 +1773,111 @@ class Sim {
    Profiles (scenario + timed events). The "why" texts were written after measuring each profile.
    ====================================================================== */
 const PROFILES = [
-  { id: 'reference', name: 'Reference without failures', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { sensor: { count: 30 } },
+  { id: 'reference', name: '[Reference] No failures', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { sensor: { count: 30 } },
     script: 'No failures. c1 and c2 read the same sensor, c2 0.3 s after c1. Every strategy runs the same traffic.',
     watch: 'Compare how many frames each strategy needs for the same 30 readings per consumer (Transmission efficiency panel), and where c2 is served from.',
     why: 'No failure: the cost of each strategy for the same traffic. Best Route sends one copy per hop over the middle row (300 frames) and ASF about the same (340). Multicast sends a copy to up to three next hops at every node: 1,350 frames and 300 duplicate Interests. Self-Learning floods its first Interest and c1 learns the path of the first answer, the north row, although the middle row is cheaper. c2 never learns a route: caches answer it (29 of its readings come from c1\'s own Content Store), so it keeps flooding, 1,343 frames in all. With every other strategy c2 is served by m3\'s cache.' },
-  { id: 'br-blind', name: 'Best Route: blind to a broken link', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
+  { id: 'br-blind', name: '[Best Route] Blind to a broken link', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
     events: [{ t: 10.2, cut: 'm2-m3' }],
     script: 'm2–m3 goes out of range at 10.2 s. c2 starts 2 s after c1.',
     watch: 'After the cut, watch m3: every new Interest still goes to m2 first, and the cost near m3 toward m2 does not change. Only the consumer\'s retransmission one second later is sent to the next face.',
     why: 'Every new Interest still follows the cheapest route into the broken link; a wireless timeout gives no feedback. Only c1\'s retransmission one second later takes the next face (n3), so every reading after the cut costs two tries and about one second (110 retransmissions, mean delay after the cut 1.0 s). With static routes this never ends. With NLSR it ends once 3 hellos are missed and the routes are rebuilt, 29 s after the cut with seed 7, while NLSR adds 768 frames of its own. c2 needs no retransmission: 2 s later m3 still holds c1\'s pending Interest for the same reading, takes c2\'s Interest as its retransmission and sends it to n3, which answers from the copy c1\'s retransmission left there (110 of c2\'s readings).' },
-  { id: 'br-lossy', name: 'Best Route: a lossy link costs the same', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, kinds: { sensor: { count: 60 } },
+  { id: 'br-lossy', name: '[Best Route] A lossy link costs the same', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, kinds: { sensor: { count: 60 } },
     links: { 'm2-m3': { loss: 0.3 } },
     script: 'm2–m3 loses 30% of its frames for the whole run.',
     watch: 'Watch c1\'s timeline: readings needing a second try keep appearing. The cost near m3 toward m2 does not change although the link loses frames, so m3 never stops using m2.',
     why: 'Routes follow the configured link cost, and loss never changes it (NLSR\'s link-cost is configuration, not a measurement). Best Route keeps every Interest on the lossy link. An exchange crosses it twice, so c1 needs 24 retransmissions for its 60 readings, for the whole run, and 36 with NLSR, the same behaviour with other random draws. c2 is served by m3\'s cache.' },
-  { id: 'br-aggr', name: 'Best Route: aggregation hides a broken link', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0.3, kinds: { sensor: { count: 90 } },
+  { id: 'br-aggr', name: '[Best Route] Aggregation hides a broken link', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0.3, kinds: { sensor: { count: 90 } },
     events: [{ t: 10.2, cut: 'm2-m3' }, { t: 50.2, stop: 'c2' }],
     script: 'm2–m3 goes out of range at 10.2 s. c2 asks for each reading 0.3 s after c1 and stops at 50.2 s.',
     watch: 'Until 50 s c1 needs almost no retransmissions although its route is broken. Watch c1\'s timeline after c2 stops.',
     why: 'c2 asks for each reading 0.3 s after c1. Its Interest reaches m3 while c1\'s is still pending towards the broken link, so m3 takes it as a retransmission and sends it to the next face (n3). The Data satisfies both, and c1 receives every reading after about 0.31 s without a single retransmission. When c2 stops at 50.2 s, each of c1\'s readings needs its own retransmission and takes about 1 s (40 retransmissions), because static routes never repair the link. With NLSR the route is rebuilt about 29 s after the cut, before c2 stops, so c1 sees no change. A failure that another consumer masks stays invisible until that consumer leaves.' },
-  { id: 'asf-return', name: 'ASF: no way back after a repair', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 150 } },
+  { id: 'asf-return', name: '[ASF] No way back after a repair', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 150 } },
     events: [{ t: 10.2, cut: 'm2-m3' }, { t: 40.2, restore: 'm2-m3' }],
     script: 'm2–m3 out of range from 10.2 s to 40.2 s. c2 starts 2 s after c1.',
     watch: 'Watch the costs near m3 and c1: the face toward m2 shows t/o after the cut, and after the repair the detour keeps the lower RTT, so the shorter path may not be used again.',
     why: 'ASF reacts: after a few timeouts c1 and m3 move to detours, with only 3 retransmissions. After the repair at 40.2 s, m2–m3 carries no frame at all for the rest of the run. c1 stays on the north row through n3, whose cache then answers c2 too (132 of c2\'s readings), and m3 measures n3 at 1.4 ms because n3 answers from its cache. ASF ranks by measured RTT and probes rarely, so a cache that answers quickly looks like a better path, and the repaired link stays unused.' },
-  { id: 'asf-lossy', name: 'ASF: a lossy link is dropped for good', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
+  { id: 'asf-lossy', name: '[ASF] A lossy link is dropped for good', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
     links: { 'm2-m3': { loss: 0.3 } },
     script: 'm2–m3 loses 30% of its frames for the whole run.',
     watch: 'Watch the cost near m3 toward m2: after a few timeouts it shows t/o, and ASF keeps the detour for the rest of the run.',
     why: 'ASF reacts at the consumer: c1 marks its face to m3 timed out at 7.5 s, after three timeouts in a row, and sends its Interests over n3 and the north row from then on; m2–m3 carries only 15 frames in the whole run. c1 needs 3 retransmissions, against 55 with Best Route on the same link. The price is a longer path for the rest of the run, although 70% of the frames would have got through, and a probe every 60 s on the other faces.' },
-  { id: 'asf-dead', name: 'ASF: a dead neighbour is probed forever', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 300 } },
+  { id: 'asf-dead', name: '[ASF] A dead neighbour is probed forever', kind: 'sensor', strategy: 'asf', base: 'static', c2Delay: 2, kinds: { sensor: { count: 300 } },
     events: [{ t: 10.2, radio: 'm3', on: false }],
     script: 'm3 switches its radio off at 10.2 s and never comes back. Use Skip 60 s to see the probes.',
     watch: 'Select c1 in the inspector: the face toward m3 stays in the ASF measurements as timed out, and every 60 s a probe is sent into it.',
     why: 'ASF reacts quickly: c1 and c2 mark their face to m3 timed out at 12.7 s, 2.5 s after the radio goes off, and n3 at 13.7 s, with 9 retransmissions for c1 and 3 for c2. What remains is small but permanent: the nodes next to m3 send a probe into the dead face every 60 s, at nine tries of air time each (17 probes in the run), and every probe renews the face\'s measurements, so the dead neighbour is never forgotten. Without NLSR nothing removes the routes through m3. With NLSR they disappear between 28 s (at c2) and 77 s (at n3) after the failure and the probes stop, but NLSR keeps sending hellos and sync Interests to m3.' },
-  { id: 'mc-cost', name: 'Multicast: robust but expensive', kind: 'sensor', strategy: 'multicast', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
+  { id: 'mc-cost', name: '[Multicast] Robust but expensive', kind: 'sensor', strategy: 'multicast', base: 'static', c2Delay: 2, kinds: { sensor: { count: 120 } },
     events: [{ t: 10.2, cut: 'm2-m3' }],
     script: 'm2–m3 goes out of range at 10.2 s. c2 starts 2 s after c1.',
-    watch: 'Compare the Transmission efficiency panel with "Best Route: blind to a broken link" under the same cut: extra Interests and duplicates at every node.',
+    watch: 'Compare the Transmission efficiency panel with "[Best Route] Blind to a broken link" under the same cut: extra Interests and duplicates at every node.',
     why: 'No reading is lost or retransmitted after the cut, because a copy already travels over every next hop. The price is 6,720 frames against 1,750 for Best Route under the same cut, and 1,310 duplicate Interests dropped along the way. On a shared radio medium every extra copy takes air time from everyone.' },
-  { id: 'sl-stale', name: 'Self-Learning: stale learned route', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 2, kinds: { sensor: { count: 700 } },
+  { id: 'sl-stale', name: '[Self-Learning] Stale learned route', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 2, kinds: { sensor: { count: 700 } },
     events: [{ t: 10.2, cut: 'n2-n3' }],
     script: 'n2–n3 goes out of range at 10.2 s. Use Skip 10 min to reach the recovery.',
     watch: 'c1 learns the north path from the first answer to its discovery. After the cut that learned route is kept: a timeout on a wireless link sends no Nack, so nothing removes it before it expires.',
     why: 'Self-Learning floods c1\'s first Interest and learns the path of the first answer: c1, n3, n2, n1, p1, the north row, although the middle row is cheaper. After the n2–n3 cut the learned routes stay: only a NoRoute Nack removes a learned route early, and a broken wireless link produces only timeouts. c1 loses every reading (588 of 700) until its route, learned at 0.5 s and not renewed by later Data, expires 10 minutes later; at about 600 s discovery finds the path through m3. c2 keeps receiving: its Interests reach p1 over paths that avoid the cut. With NLSR, Self-Learning skips discovery and copies every Interest to all NLSR next hops at each node: nothing is lost, but it sends 34,469 frames against 12,456.' },
-  { id: 'sl-prod-off', name: 'Self-Learning: the producer disconnects', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 2, kinds: { sensor: { count: 90 } },
+  { id: 'sl-prod-off', name: '[Self-Learning] The producer disconnects', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 2, kinds: { sensor: { count: 90 } },
     events: [{ t: 30.2, prod: 'p1', on: false }, { t: 60.2, prod: 'p1', on: true }],
     script: 'The sensor application on p1 disconnects at 30.2 s and connects again at 60.2 s.',
     watch: 'After the disconnect, watch the Network card\'s frame counters and the FIB counters: the learned routes disappear and every Interest is flooded.',
     why: 'The next Interest reaches p1 without a route and is answered with a NoRoute Nack, which removes the learned route at every hop back to c1. From then on every Interest is a discovery sent to every face. A consumer retransmission overwrites the nonce in the PIT records (NFD keeps only the last nonce per face), so copies of the older nonce still on their way are no longer recognised as duplicates and are flooded again. The floods feed each other: about 8,200 frames per second for the whole outage against 44 before, and the storm ends only when p1 connects again at 60.2 s and its Data satisfies the pending Interests. Measured in Mini-NDN-WiFi the same storm happens, at 1,000 to 3,500 frames per second, probably because each hop there takes two to three times longer. With NLSR the learned routes play no part: Interests follow NLSR\'s routes and p1 rejects each one with a Nack, a seventeenth of the frames (14,203 against 245,740), but the readings of the outage are lost too.' },
-  { id: 'sl-cache', name: 'Self-Learning: caches hide the route', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 0.3, kinds: { sensor: { count: 30 } },
+  { id: 'sl-cache', name: '[Self-Learning] Caches hide the route', kind: 'sensor', strategy: 'self-learning', base: 'none', c2Delay: 0.3, kinds: { sensor: { count: 30 } },
     script: 'No failures.',
     watch: 'Select c2 in the inspector: its FIB stays empty, and each of its Interests is a discovery sent to every neighbour (c2\'s row in the efficiency table).',
     why: 'c2 is always served by caches, mostly by c1\'s own Content Store two hops away (29 of 30). Data from a cache carries no prefix announcement (Self-Learning does not override the cache-hit step), so c2 never learns a route. Every one of its Interests is a discovery sent to both neighbours, and c2 sends twice the Interest frames of c1 for the same readings (61 against 31).' },
-  { id: 'mcast-faces', name: 'All strategies on multicast-only faces', kind: 'sensor', strategy: 'best-route', base: 'static', faces: 'mcast', c2Delay: 0.3, all: true, noNlsr: true, kinds: { sensor: { count: 30 } },
+  { id: 'mcast-faces', name: '[Faces] All strategies on multicast-only faces', kind: 'sensor', strategy: 'best-route', base: 'static', faces: 'mcast', c2Delay: 0.3, all: true, noNlsr: true, kinds: { sensor: { count: 30 } },
     script: 'The stock Mini-NDN Wi-Fi setup: one ad hoc multicast face per node, routes on it. No failures.',
     watch: 'Switch the strategy: the counts do not change, because every strategy has only one face to choose.',
     why: 'With one multicast face there is nothing to choose: every strategy broadcasts each Interest, every node rebroadcasts it once, and the counts are identical for all four. Each reading costs 12 broadcasts (6 Interest, 6 Data) and 13 duplicate Interests dropped. c2 is served by its own Content Store, because its node relayed c1\'s flooded Interest and cached the Data before c2 asked.' },
-  { id: 'nlsr-flip', name: 'NLSR: a link that flips faster than hellos', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, kinds: { sensor: { count: 300 } },
+  { id: 'nlsr-flip', name: '[NLSR] A link that flips faster than hellos', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, kinds: { sensor: { count: 300 } },
     flaps: { 'm2-m3': 9 },
     script: 'm2–m3 goes out of range and back every 9 s for the whole run. NLSR sends a hello every 60 s.',
     watch: 'Compare the two measured columns, and with NLSR watch the event log for neighbours going INACTIVE and ACTIVE out of step with the link.',
     why: 'Static routes keep m3 on the link, and every Interest sent while it is out of range needs a retransmission: c1 needs 147 for its 300 readings, half a second of delay on average. NLSR sees the link only through its hellos every 60 s (three missed tries within 2 s make the neighbour INACTIVE, one answer makes it ACTIVE again), so its view has nothing to do with the 9 s flips. m3\'s route points into the broken link for 18 s and around a working link for 132 s out of 306 s. Each change costs a new adjacency LSA, sync and LSA fetches and a routing calculation at every node. NLSR cuts the retransmissions to 18 but adds 1,677 NLSR frames, and its routing is wrong half of the time. A period that divides the hello interval, such as 10 s, always meets the hellos in the same phase and makes NLSR look better than it is.' },
-  { id: 'replica', name: 'Two producers of the same data', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, all: true, kinds: { sensor: { count: 60 } },
+  { id: 'replica', name: '[Producers] Two producers of the same data', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 2, all: true, kinds: { sensor: { count: 60 } },
     apps: { p2: { on: true } }, links: { 'm1-p2': { cost: 12 } }, events: [{ t: 30.2, prod: 'p1', on: false }],
     script: 'p1 and p2 both serve the sensor readings; m1–p2 costs 12, so p1 is the cheaper producer for everyone (with equal costs the choice would depend on how NFD orders a tie). The application on p1 disconnects at 30.2 s; p1 stays on the air as a relay.',
     watch: 'Watch the producer cards: before 30 s only one producer works, and after it some strategies never reach the other one although it is one hop from m1.',
     why: 'm1 reaches p1 at cost 10 and p2 at cost 12, so Best Route takes p1 and p2 serves nothing while p1 is up. When p1\'s application leaves, p1 stays on the air as a relay with routes to p2: it sends each Interest on through n1 back to m1, which recognises the loop and answers with a Nack. Every retransmission is again a new Interest for m1, which picks its cheapest face, p1, again. c1 and c2 lose every reading after 30 s (120 Nacks at c1) although p2 is one hop from m1. ASF counts the Nack and moves to p2 at once. Multicast reaches both producers from the start, so p2 answers 60 Interests that p1 also answered (2,670 frames, 750 duplicates). Self-Learning is rejected with a NoRoute Nack, which removes its route, and the next discovery finds p2. Measured in Mini-NDN-WiFi with the same costs, Best Route loses the same 30 readings with static routes and with NLSR; with both costs at 10, NLSR broke the tie towards p2 and nothing was lost, which is why the costs differ here.' },
-  { id: 'two-kinds', name: 'A file and a stream share one radio', kind: 'file', strategy: 'best-route', base: 'static', c2Delay: 0, vary: 'stream',
+  { id: 'two-kinds', name: '[Medium] A file and a stream share one radio', kind: 'file', strategy: 'best-route', base: 'static', c2Delay: 0, vary: 'stream',
     apps: { p2: { on: true, kind: 'stream' }, c2: { kind: 'stream' } }, kinds: { stream: { count: 100 } },
     script: 'c1 fetches a 300 KB file from p1 with Best Route; c2 watches p2\'s camera stream at the same time, with the strategy the measured column names.',
     watch: 'Compare c1\'s goodput and c2\'s frames on time when the stream uses Multicast against Best Route: both share one radio medium.',
     why: 'Alone, c1 fetches its file at 1.70 Mbit/s. With p2\'s stream to c2 at the same time it gets 1.41 Mbit/s when the stream uses Best Route or ASF, and every frame plays. With Multicast the stream\'s copies to every next hop fill the radio: c1\'s file slows to 0.66 Mbit/s and the stream itself plays only 56 of its 100 frames on time (44 late). Self-Learning with static routes copies every Interest too and does worse: 0.37 Mbit/s for the file and 12 of 100 frames on time. Choosing a strategy per kind of data does not isolate the kinds on a shared radio.' },
-  { id: 'cache-small', name: 'A stream evicts a sensor from small caches', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0,
+  { id: 'cache-small', name: '[Caching] A stream evicts a sensor from small caches', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 0,
     apps: { p2: { on: true, kind: 'stream' }, c2: { kind: 'stream' } }, kinds: { sensor: { count: 150, rate: 5 } }, csMax: 8,
     links: { 'c1-n3': { on: false }, 'c1-m3': { loss: 0.3 } },
     script: 'Every Content Store holds 8 packets. c1 reads p1\'s sensor five times a second over a lossy last hop (m3–c1, 30%); c2 watches p2\'s stream through m3.',
     watch: 'Watch m3\'s Content Store hits: c1\'s retransmissions could be answered by m3, but the stream\'s segments have evicted the readings.',
     why: 'With 8 packets per Content Store, m3 keeps only the last Data it relayed, and the stream passes 40 segments a second through it. Between a lost reading and c1\'s retransmission one second later the stream has evicted it, so no cache answers c1\'s retransmissions and all of them travel back to p1. With c2 off, caches answer 31 of them (28 at m3, 3 at m2), and with the default capacity 34. p1 answers 171 Interests for 150 readings instead of 150, and the sensor needs 1,628 frames instead of 1,358 with the default capacity.' },
-  { id: 'cache-lifeline', name: 'Best Route: caching as the lifeline', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 8, kinds: { sensor: { count: 20 } },
+  { id: 'cache-lifeline', name: '[Best Route] Caching as the lifeline', kind: 'sensor', strategy: 'best-route', base: 'static', c2Delay: 8, kinds: { sensor: { count: 20 } },
     events: [{ t: 10.2, cut: 'm1-p1' }, { t: 10.2, cut: 'n1-p1' }, { t: 13.2, nocache: 'm3' }],
     script: 'c2 starts 8 s after c1. Both links of p1 go out of range at 10.2 s; m3 turns its cache off at 13.2 s.',
     watch: 'After the cut only c2 still receives readings, from caches: first m3, then the next cache upstream once m3\'s cache is off.',
     why: 'After both links of p1 are cut the producer is unreachable, so no routing can help, with or without NLSR. c2 still receives the 10 readings c1 fetched before the cut: five from m3, then five from m2 once m3\'s cache is off. Every reading no cache holds is lost.' },
-  { id: 'transfer', name: 'File transfer: shared medium and caching', kind: 'file', strategy: 'best-route', base: 'static', c2Delay: 2,
+  { id: 'transfer', name: '[File] Shared medium and caching', kind: 'file', strategy: 'best-route', base: 'static', c2Delay: 2,
     script: 'c1 and c2 fetch the same 300 KB file with ndnget; c2 starts 2 s later.',
     watch: 'Watch the throughput chart: all frames share one radio medium, and c2 is served by m3\'s cache.',
     why: 'c1 is limited by the shared medium: each segment costs four Interest and four Data transmissions one after another, about 1.7 Mbit/s out of 12 Mbit/s. The window grows until the queue of the shared medium delays segments past ndnget\'s retransmission timer, and 74 segments time out although no frame is lost. c2 fetches the same file from m3\'s cache, one hop away, at 8.4 Mbit/s.' },
-  { id: 'ping', name: 'Ping: latency per strategy', kind: 'ping', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true,
+  { id: 'ping', name: '[Ping] Latency per strategy', kind: 'ping', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true,
     script: 'ndnping from c1 and c2, one ping per second. No failures.',
     watch: 'Compare round-trip times. Pings have unique names and MustBeFresh, so no cache answers them.',
     why: 'Without failures every strategy gives the same latency, about 6 ms over four hops; pings have unique names and are never cached. Multicast costs 1,860 frames against 480 for the same answers. Self-Learning floods its first ping and then follows the learned route (553 frames).' },
-  { id: 'st-asf', name: 'Stream: ASF measures the producer\'s waiting time', kind: 'stream', strategy: 'asf', base: 'static', c2Delay: 0.3, kinds: { stream: { count: 400 } },
+  { id: 'st-asf', name: '[Stream] ASF measures the producer\'s waiting time', kind: 'stream', strategy: 'asf', base: 'static', c2Delay: 0.3, kinds: { stream: { count: 400 } },
     script: 'c1 and c2 watch the camera stream. No failures.',
     watch: 'Look at the ASF costs near m3 and c1: the measured RTT is mostly the time Interests wait at p1 for their frame, not the path.',
     why: 'c1 measures 233 ms on its face to m3 and 227 ms on its face to n3: almost all of it is the 0.2 s each Interest waits at p1 for its frame (two frames ahead). The path differences of a few milliseconds disappear in that wait, so ASF cannot tell the middle row from the longer north row: c1 sends most of its Interests over n3 (2,966 frames on c1–n3 against 244 on c1–m3), and the stream costs 26,697 frames against 16,136 with Best Route. Set Frames asked for ahead to 0 and ASF sees the paths again (26 ms against 35 ms) and uses m3.' },
-  { id: 'st-late', name: 'Stream: no time for a retransmission', kind: 'stream', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { stream: { count: 300, buffer: 0.3, rto: 0.6 } },
+  { id: 'st-late', name: '[Stream] No time for a retransmission', kind: 'stream', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { stream: { count: 300, buffer: 0.3, rto: 0.6 } },
     events: [{ t: 10.2, cut: 'm2-m3' }],
     script: 'A low-latency stream: frames play 0.3 s after they are made, and the viewers retransmit after 0.6 s. m2–m3 goes out of range at 10.2 s.',
     watch: 'Watch the timeline after the cut, then lower the retransmission timer under Data in use and restart.',
     why: 'Frames play 0.3 s after they are made, and the viewers ask for each one 0.2 s before (two frames ahead). After the cut the first Interest of every frame goes into the broken link, and a retransmission would come 0.6 s later, after the playout time, so the viewers do not retransmit at all: with Best Route every frame after the cut is missed (203 of 300), with static routes and with NLSR, which repairs too late for this 30 s run. With a retransmission timer of 0.4 s every frame plays, at the price of 812 retransmissions. ASF moves to a detour after a few timeouts (c2 misses 4 frames). Multicast reaches the producer over every path, but its copies fill the radio: it sends 67,097 frames against 6,420, and most frames arrive after their playout time (124 and 104 of 300 on time). Self-Learning is not on the cut path because it learned the north row (298 of 300).' },
-  { id: 'st-two', name: 'Stream: two viewers on one radio', kind: 'stream', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { stream: { count: 200, size: 8 } },
+  { id: 'st-two', name: '[Stream] Two viewers on one radio', kind: 'stream', strategy: 'best-route', base: 'static', c2Delay: 0.3, all: true, kinds: { stream: { count: 200, size: 8 } },
     script: 'c1 and c2 watch the same camera stream at 8 KB per frame, ten frames a second. No failures.',
     watch: 'Compare the strategies: the PIT merges the two viewers\' Interests, so the second viewer is almost free, unless the strategy copies every Interest.',
     why: 'The PIT merges the two viewers\' Interests for the same frame, so the second viewer costs little: 16,272 frames with Best Route against 12,800 for one viewer. ASF\'s probes and switches cost 26,533. With Multicast one viewer plays every frame (44,864 frames), but two viewers lose almost all: the copies of both viewers\' Interests fill the radio, frames wait for the medium far beyond their playout time, and only 6 and 3 of 200 frames play on time (154,519 frames). Self-Learning with NLSR routes copies like Multicast and collapses the same way (5 and 2); without routes it learns one path and plays every frame.' },
-  { id: 'st-sl', name: 'Stream: Self-Learning and a producer that leaves', kind: 'stream', strategy: 'self-learning', base: 'none', c2Delay: 0.3, kinds: { stream: { count: 300 } },
+  { id: 'st-sl', name: '[Stream] Self-Learning and a producer that leaves', kind: 'stream', strategy: 'self-learning', base: 'none', c2Delay: 0.3, kinds: { stream: { count: 300 } },
     events: [{ t: 10.2, prod: 'p1', on: false }, { t: 15.2, prod: 'p1', on: true }],
     script: 'The camera on p1 disconnects at 10.2 s and connects again at 15.2 s.',
     watch: 'Watch the frames per second on the Network card while the camera is away, and how long the viewers take to play again after it is back.',
@@ -1832,6 +1887,14 @@ const PROFILES = [
 /* ======================================================================
    UI state
    ====================================================================== */
+// Logarithmic sliders (log: [min, max]): 1000 positions spread evenly over the orders of magnitude, so they slide
+// smoothly; the value is rounded to two significant digits
+const LOG_STEPS = 1000;
+function logToPos(q, v) { const [a, b] = q.log; return Math.round(Math.log(v / a) / Math.log(b / a) * LOG_STEPS); }
+function logFromPos(q, pos) {
+  const [a, b] = q.log, v = a * Math.pow(b / a, pos / LOG_STEPS), p = Math.pow(10, Math.floor(Math.log10(v)) - 1);
+  return Math.min(b, Math.max(a, Math.round(v / p) * p));
+}
 function defaultKinds() {
   const o = {};
   for (const k of KIND_ORDER) { o[k] = { name: KINDS[k].name, strategy: 'best-route' }; for (const q of KINDS[k].params) o[k][q.k] = q.def; }
@@ -1866,6 +1929,8 @@ function rebuild() {
 // A profile: every application on the profile's kind of data, then the profile's own changes
 function profileCfg(p) {
   const c = defaultCfg(), main = p.kind || 'sensor';
+  // Profiles keep the data settings they were measured and validated with (pdef), whatever the defaults of manual mode
+  for (const k of KIND_ORDER) for (const q of KINDS[k].params) if (q.pdef != null) c.kinds[k][q.k] = q.pdef;
   c.layer = UI.cfg.layer; c.seed = UI.cfg.seed; c.routing = p.base; c.faces = p.faces || 'ucast';
   for (const k of KIND_ORDER) c.kinds[k].name = UI.cfg.kinds[k].name;   // keep the names the user chose
   for (const id of APP_NODES) if (c.apps[id].role !== 'R') c.apps[id].kind = main;
@@ -1926,11 +1991,11 @@ function renderKinds() {
   const c = UI.cfg, used = prefixesOf(c);
   $('kinds').innerHTML = used.map(({ kind }) => {
     const K = KINDS[kind], k = c.kinds[kind];
-    const who = APP_NODES.filter(id => c.apps[id].role !== 'R' && c.apps[id].kind === kind).join(', ');
+    const who = APP_NODES.filter(id => c.apps[id].on && c.apps[id].role !== 'R' && c.apps[id].kind === kind).join(', ');
     return `<div class="kind" data-k="${kind}">
       <div class="kh"><b title="${esc(K.title)}">${K.label}</b><input type="text" data-a="name" value="${esc(k.name)}" spellcheck="false" aria-label="${K.label} name"><span class="empty">${who}</span></div>
       <div class="seg" data-a="strategy" title="Strategy for ${esc(k.name)} (nfdc strategy set)">${segButtons(STRAT_OPTS, k.strategy)}</div>
-      ${K.params.map(q => `<div class="slider"><label for="kp-${kind}-${q.k}">${q.label}</label><output id="ko-${kind}-${q.k}">${esc(q.fmt(k[q.k]))}</output><input type="range" id="kp-${kind}-${q.k}" data-p="${q.k}" min="${q.min}" max="${q.max}" step="${q.step}" value="${k[q.k]}"></div>`).join('')}
+      ${K.params.map(q => `<div class="slider"><label for="kp-${kind}-${q.k}">${q.label}</label><output id="ko-${kind}-${q.k}">${esc(q.fmt(k[q.k]))}</output><input type="range" id="kp-${kind}-${q.k}" data-p="${q.k}" ${q.log ? `min="0" max="${LOG_STEPS}" step="1" value="${logToPos(q, k[q.k])}"` : `min="${q.min}" max="${q.max}" step="${q.step}" value="${k[q.k]}"`}></div>`).join('')}
     </div>`;
   }).join('');
 }
@@ -1938,6 +2003,8 @@ function prodToggle(conf, id, on) {
   conf.on = on;
   const pr = sim.producers.get(id); if (!pr) return;
   if (on && !pr.deployed) { rebuild(); return; }   // deploying a producer changes what routing announces: restart with it
+  if (!on && sim.now === 0) { rebuild(); return; }   // before the run has begun, off means not deployed: restart without it
+  if (!on && pr.on) sim.disrupt(`producer ${id} disconnects`, { prod: id });
   if (on && sim.now < conf.start) sim.at(conf.start, () => { if (conf.on) pr.setOn(true); });
   else pr.setOn(on);
   renderStatic(); renderNow();
@@ -1962,7 +2029,8 @@ function initControls() {
     { v: 'L3', label: 'L3 (UDP)', title: 'NDN over UDP and IPv4 (udp4:// faces), 28 B more per frame' }]);
   scen('faces', 'segFaces', [
     { v: 'ucast', label: 'Unicast', title: 'One unicast face per neighbour, NFD multicast faces off: the strategies can choose between neighbours' },
-    { v: 'mcast', label: 'Multicast', title: 'One ad hoc multicast face per node, the stock Mini-NDN Wi-Fi setup: every Interest is broadcast, so all strategies behave alike' }]);
+    { v: 'mcast', label: 'Multicast', title: 'One ad hoc multicast face per node, the stock Mini-NDN Wi-Fi setup: every Interest is broadcast, so all strategies behave alike' },
+    { v: 'both', label: 'Both', title: 'A unicast face per neighbour plus the ad hoc multicast face: routes use the unicast faces, while Self-Learning sends its discovery on every face, the multicast one included' }]);
   scen('routing', 'segRouting', [
     { v: 'static', label: 'Static', title: 'Routes preloaded at t = 0 from the link weights (the grey links and their costs); they never change' },
     { v: 'nlsr', label: 'NLSR', disabled: () => UI.cfg.faces === 'mcast', title: 'Routes computed and kept up to date by NLSR from hellos and LSAs. Needs a unicast face per neighbour' },
@@ -1979,7 +2047,9 @@ function initControls() {
 
   segmented($('segFF'), FF_RATES.map(r => ({ v: String(r), label: r + ' s/s', title: `Fast-forward runs ${r} simulated seconds per second` })), () => String(UI.ffRate), v => { UI.ffRate = +v; });
   syncers.push($('segFF')._sync);
-  segmented($('segSpeed'), [{ v: '0.5', label: '½×' }, { v: '1', label: '1×' }, { v: '2', label: '2×' }, { v: '4', label: '4×' }], () => String(UI.speed), v => { UI.speed = +v; });
+  // While paused the speed buttons set the events per Step; half a step means nothing, so ½× is greyed out then
+  segmented($('segSpeed'), [{ v: '0.5', label: '½×', disabled: () => !UI.running }, { v: '1', label: '1×' }, { v: '2', label: '2×' }, { v: '4', label: '4×' }, { v: '8', label: '8×' }],
+    () => String(UI.speed), v => { UI.speed = +v; });
   syncers.push($('segSpeed')._sync);
 
   // applications table
@@ -1987,7 +2057,7 @@ function initControls() {
   at.addEventListener('change', e => {
     const t = e.target, id = t.dataset.id, a = id && UI.cfg.apps[id]; if (!a) return;
     if (t.dataset.a === 'on') {
-      if (a.role === 'P') { prodToggle(a, id, t.checked); renderAppTable(); return; }
+      if (a.role === 'P') { prodToggle(a, id, t.checked); syncAll(); return; }
       a.on = t.checked;
     } else if (t.dataset.a === 'start') { a.start = Math.max(0, +t.value || 0); t.value = a.start; }
     else if (t.dataset.a === 'role') { a.role = t.value; a.on = true; }
@@ -2003,7 +2073,8 @@ function initControls() {
   kd.addEventListener('input', e => {
     const t = e.target; if (!t.dataset.p) return;
     const kind = t.closest('.kind').dataset.k, q = KINDS[kind].params.find(x => x.k === t.dataset.p);
-    UI.cfg.kinds[kind][q.k] = +t.value; $(`ko-${kind}-${q.k}`).textContent = q.fmt(+t.value);
+    const v = q.log ? logFromPos(q, +t.value) : +t.value;
+    UI.cfg.kinds[kind][q.k] = v; $(`ko-${kind}-${q.k}`).textContent = q.fmt(v);
   });
   kd.addEventListener('change', e => {
     const t = e.target, box = t.closest('.kind'); if (!box) return;
@@ -2086,20 +2157,33 @@ function routingHint() {
   if (c.routing === 'nlsr') return 'NLSR detects a broken link after 3 missed hellos (sent every 60 s), builds a new LSA 10 s later and recomputes routes 15 s after that. Its hellos, sync and LSA frames share the radio with the data.';
   return 'Self-Learning floods the first Interest to every neighbour and learns a route from the Data that comes back.';
 }
-function syncTransport() { $('btnPlay').textContent = UI.running ? 'Pause' : 'Play'; $('btnTurbo').setAttribute('aria-pressed', String(UI.turbo)); }
+const PLAY_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path class="f" d="M4.5 2.5v11l9-5.5z"/></svg>';
+const PAUSE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect class="f" x="3.5" y="2.5" width="3" height="11" rx=".6"/><rect class="f" x="9.5" y="2.5" width="3" height="11" rx=".6"/></svg>';
+function syncTransport() {
+  const b = $('btnPlay'), name = UI.running ? 'Pause' : 'Play';
+  if (b.title !== name) { b.innerHTML = UI.running ? PAUSE_ICON : PLAY_ICON; b.title = name; b.setAttribute('aria-label', name); }
+  $('btnTurbo').setAttribute('aria-pressed', String(UI.turbo));
+  $('speedLabel').textContent = UI.running ? 'Speed' : 'Per step';
+  if ($('segSpeed')._sync) $('segSpeed')._sync();
+}
 function setLink(id, patch) {
   Object.assign(UI.cfg.links.get(id), patch);
-  const l = sim.linkMap.get(id); Object.assign(l, patch); sim.ver++;
+  const l = sim.linkMap.get(id);
+  if (patch.on === false && l.on) sim.disrupt(`link ${l.a}–${l.b} out of range`, { link: id });
+  if (patch.loss > (l.loss || 0)) sim.disrupt(`loss ${Math.round(patch.loss * 100)}% on ${l.a}–${l.b}`, { link: id });
+  Object.assign(l, patch); sim.ver++;
   if (patch.on !== undefined) sim.log(l.a, `link ${l.a}–${l.b} ${patch.on ? 'back in range' : 'out of range'}`, patch.on ? 'U' : 'X');
   renderStatic();
 }
 function setCaching(id, on) {
+  if (!on && sim.nodes.get(id).caching) sim.disrupt(`caching off at ${id}`, { cache: id });
   UI.cfg.caching.set(id, on); sim.nodes.get(id).caching = on; sim.ver++;
   sim.log(id, `caching ${on ? 'on' : 'off'} (nfdc cs config admit ${on ? 'on' : 'off'} serve ${on ? 'on' : 'off'})`, 'U');
   renderStatic();
 }
 function setNodeOn(id, on) {
   if (on) UI.cfg.nodesOff.delete(id); else UI.cfg.nodesOff.add(id);
+  if (!on && sim.nodes.get(id).on) sim.disrupt(`radio of ${id} off`, { node: id });
   sim.nodes.get(id).on = on; sim.ver++;
   sim.log(id, on ? 'radio back on (tables kept)' : 'radio off: sends and receives nothing, tables kept', on ? 'U' : 'X');
   renderStatic();
@@ -2114,8 +2198,8 @@ function nodeAction(act, id, checked) {
   if (act === 'node') setNodeOn(id, checked === undefined ? !n.on : checked);
   else if (act === 'cs') setCaching(id, checked === undefined ? !n.caching : checked);
   else if (act === 'clrcs') { n.clearCs(); sim.log(id, 'Content Store cleared', 'U'); }
-  else if (act === 'clrfib') { n.resetFib(); sim.log(id, 'FIB emptied (static routes do not come back; NLSR re-registers at its next routing calculation)', 'X'); }
-  else if (act === 'reset') { n.resetAll(); sim.log(id, 'node reset: CS, PIT, FIB, Dead Nonce List and measurements emptied', 'X'); }
+  else if (act === 'clrfib') { sim.disrupt(`FIB of ${id} emptied`); n.resetFib(); sim.log(id, 'FIB emptied (static routes do not come back; NLSR re-registers at its next routing calculation)', 'X'); }
+  else if (act === 'reset') { sim.disrupt(`${id} reset`); n.resetAll(); sim.log(id, 'node reset: CS, PIT, FIB, Dead Nonce List and measurements emptied', 'X'); }
   sim.ver++; renderStatic(); renderNow();
 }
 const SETTING_DEFAULTS = { showCosts: true, showRoutes: true, dashUnrouted: true, showUse: true, showOver: true, showRipple: true, showBadges: true, showLabels: true };
@@ -2129,14 +2213,17 @@ function resetDefaults() {
 }
 
 /* ---------- Time ---------- */
-function step() { const t = sim.nextTime(); if (t === Infinity) return; sim.runUntil(t); sim.retire(); }
+// One Step runs to the next event; while paused the speed buttons set how many events (1, 2, 4 or 8) a Step runs
+function step() {
+  for (let i = 0; i < Math.max(1, Math.round(UI.speed)); i++) { const t = sim.nextTime(); if (t === Infinity) return; sim.runUntil(t); sim.retire(); }
+}
 // Skip fast-forwards to the target time at the chosen speed, so counters, tables and timeline can be watched on the way
 function skip(sec) { UI.target = sim.now + sec; UI.turbo = true; UI.running = true; syncTransport(); }
 function skipNow(sec) { sim.quiet = true; sim.runUntil(sim.now + sec); sim.retire(); sim.quiet = false; renderNow(); }
 function renderNow() {
   // The map is redrawn every 150 ms; while a button is held on it, its elements stay, so the click reaches them
   if (!UI.press) { if (UI.ver !== sim.ver) renderStatic(); else renderLinks(); renderNodes(); renderRoutes(); renderCosts(); }
-  renderReadouts(); renderEfficiency(); renderTimeline(); renderLog(); renderInspector(false); }
+  renderReadouts(); renderEfficiency(); renderRecovery(); renderTimeline(); renderLog(); renderInspector(false); }
 function advance(dt) {
   if (UI.turbo) {
     let to = sim.now + dt * UI.ffRate;
@@ -2170,6 +2257,146 @@ function perConsumer(id, x) {
   if (x.kind === 'stream') { r.late = x.late; r.stalls = x.stalls; }
   return r;
 }
+/* ---------- Recovery after a disruption (composed metrics) ----------
+   For every disruption (a link out of range or lossy, a radio or a cache off, a producer leaving, a FIB emptied) and
+   every consumer that was running: the satisfaction ratio in 2 s windows, that is the requests first sent in the window
+   that were satisfied (readings and pings answered, stream frames on time); for a file, the segments received. The steady
+   level is its mean over the shorter of 60 s and the time the consumer ran before the disruption. Recovered: the first
+   window from which the level stays within 10 % of the steady level for 10 s (or until the consumer has no more data);
+   the recovery time is that window's start minus the disruption's time, 0 when no window falls below. Recovery effort:
+   the frames and the air time of the whole network during the recovery time beyond the rate before the disruption.
+   Definitions from the testbed's metrics (recovery time and cost), measured here per disruption. */
+const REC = { win: 2, steady: 60, tol: 0.1, hold: 10, bin: CHART_BIN };
+// Per consumer, satisfied and decided requests per 0.1 s bin of their first send time (segments received for a file).
+// timely: only requests satisfied on the first try count (delay-aware recovery)
+function consumerBins(a, timely) {
+  if (a.kind === 'file') return { ok: timely ? a.binsFirst : a.bins, n: null };
+  const ok = [], n = [];
+  for (const x of a.recs) {
+    if (x.t0 == null || x.state === 'pending' || x.state === 'wait') continue;
+    const b = Math.floor(x.t0 / REC.bin + 1e-9); n[b] = (n[b] || 0) + 1;
+    if (x.state === 'done' && (!timely || x.tries === 1)) ok[b] = (ok[b] || 0) + 1;
+  }
+  return { ok, n };
+}
+function binSum(arr, t1, t2, dt) { let v = 0; for (let b = Math.floor(t1 / dt + 1e-9); b < Math.floor(t2 / dt + 1e-9); b++) v += arr[b] || 0; return v; }
+function consumerLevel(a, bins, t1, t2) {
+  if (a.kind === 'file') {
+    if (a.t0 == null || t1 < a.t0 - 1e-9 || (a.tEnd != null && t1 >= a.tEnd)) return null;
+    return binSum(bins.ok, t1, t2, REC.bin);
+  }
+  const n = binSum(bins.n, t1, t2, REC.bin);
+  return n ? binSum(bins.ok, t1, t2, REC.bin) / n : null;
+}
+function consumerDone(a) {
+  if (a.kind === 'file') return a.tEnd != null || a.failed || a.stopped;
+  return a.stopped || a.recs.every(x => x.state !== 'wait' && x.state !== 'pending');
+}
+/* ---------- Data gap and strategy reaction time (composed metrics, per disruption and consumer) ----------
+   Data gap: from the last Data the consumer received before the disruption to the first Data of a request it sent
+   after it. Reaction time: from the disruption until a request sent after it is satisfied on its first try over a path
+   that avoids the failed element (link, node, producer or cache); the strategy has then stopped using the lost path.
+   Data that returns over the failed element (a link back in range, a producer that reconnects) is not a reaction.
+   Unaffected: the consumer's last path before the disruption did not use the element. */
+function requestsOf(a) {
+  if (a.kind === 'file') return a.segs.filter(x => x.state === 'done').map(x => ({ t0: x.sentAt, at: x.at, path: x.path, first: x.retx === 0 }));
+  return a.recs.filter(x => x.t0 != null).map(x => ({ t0: x.t0, at: x.state === 'done' ? x.at : null, path: x.path, first: x.state === 'done' && x.tries === 1 }));
+}
+function usesElement(path, el) {
+  if (!path || !el) return false;
+  if (el.link) { const [a, b] = el.link.split('-'); return path.some((n, i) => i > 0 && ((path[i - 1] === a && n === b) || (path[i - 1] === b && n === a))); }
+  if (el.node) return path.includes(el.node);
+  return path[0] === (el.prod || el.cache);
+}
+function reactionOf(s, a, d, final) {
+  const reqs = requestsOf(a), got = reqs.filter(x => x.at != null);
+  const before = got.filter(x => x.at < d.t).sort((p, q) => p.at - q.at), last = before[before.length - 1];
+  const after = got.filter(x => x.t0 >= d.t).sort((p, q) => p.at - q.at);
+  const gap = last && after.length ? after[0].at - last.at : null;
+  if (!d.el || !last) return { gap, reaction: null, rstate: 'n/a' };
+  if (!usesElement(last.path, d.el)) return { gap, reaction: null, rstate: 'unaffected' };
+  const r = after.find(x => x.first && !usesElement(x.path, d.el));
+  if (r) return { gap, reaction: r.at - d.t, rstate: 'reacted' };
+  return { gap, reaction: null, rstate: final || consumerDone(a) ? 'no reaction' : 'waiting' };
+}
+// final: the run is over, so a consumer still below its steady level has not recovered. timely: the level counts only
+// requests satisfied on the first try, so a consumer whose requests all need a retransmission has not recovered
+function recoveryOf(s, final, timely) {
+  const rows = [], W = REC.win, F = s.series.frames, A = s.series.air, dt = s.series.dt;
+  const bins = {};
+  for (const d of s.disruptions) for (const c of s.consIds) {
+    const a = s.consumers[c]; if (!a) continue;
+    const start = s.cfg.apps[c].start; if (start >= d.t) continue;
+    const bn = bins[c] || (bins[c] = consumerBins(a, timely)), L = Math.min(REC.steady, d.t - start);
+    let sum = 0, k = 0;
+    for (let t = d.t - W; t >= d.t - L - 1e-9; t -= W) { const v = consumerLevel(a, bn, t, t + W); if (v != null) { sum += v; k++; } }
+    const row = Object.assign({ t: d.t, what: d.what, c, kind: a.kind, steady: k ? sum / k : null, time: null, state: 'no steady level', frames: null, air: null },
+      reactionOf(s, a, d, final));
+    if (!k || !(row.steady > 0)) { rows.push(row); continue; }
+    const thr = row.steady * (1 - REC.tol), ended = consumerDone(a), data = [];
+    for (let t = d.t; t + W <= s.now + 1e-9; t += W) { const v = consumerLevel(a, bn, t, t + W); if (v != null) data.push([t, v]); }
+    row.state = final || ended ? 'not recovered' : 'recovering';
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][1] < thr) continue;
+      const hold = data.filter(w => w[0] >= data[i][0] && w[0] < data[i][0] + REC.hold);
+      if (hold.some(w => w[1] < thr)) continue;
+      if (!(data[data.length - 1][0] + W >= data[i][0] + REC.hold - 1e-9 || ended || final)) { row.state = 'recovering'; break; }
+      row.state = 'recovered'; row.time = data[i][0] - d.t;
+      const T = row.time, pre = arr => binSum(arr, d.t - L, d.t, dt) / L;
+      row.frames = T > 0 ? Math.max(0, binSum(F, d.t, d.t + T, dt) - pre(F) * T) : 0;
+      row.air = T > 0 ? Math.max(0, binSum(A, d.t, d.t + T, dt) - pre(A) * T) : 0;
+      break;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+/* ---------- Key indicators (third tier: the overall performance of the network, strategy and routing) ----------
+   Delivery: share of the decided requests that were satisfied (readings and pings answered, stream frames on time,
+   file segments received). Timeliness: share satisfied on the first try, without a retransmission. Cost: frames on the
+   medium (NLSR included) per satisfied request. Resilience: share of disruption and consumer pairs that recovered, by
+   satisfaction and by first-try satisfaction (delay-aware), with the mean recovery time. */
+function keyIndicators(s, final) {
+  let n = 0, ok = 0, first = 0;
+  for (const c of s.consIds) {
+    const a = s.consumers[c]; if (!a) continue;
+    if (a.kind === 'file') { n += a.N; ok += a.received; first += a.segs.filter(x => x.state === 'done' && x.retx === 0).length; continue; }
+    for (const x of a.recs) {
+      if (x.state === 'wait' || x.state === 'pending') continue;
+      n++; if (x.state === 'done') { ok++; if (x.tries === 1) first++; }
+    }
+  }
+  const frames = Object.values(s.st.frames).reduce((p, q) => p + q, 0);
+  const res = rows => { const r = rows.filter(x => x.state !== 'no steady level'), done = r.filter(x => x.state === 'recovered');
+    return { pairs: r.length, recovered: done.length, mean: done.length ? done.reduce((p, x) => p + x.time, 0) / done.length : null }; };
+  const rows = recoveryOf(s, final, false), aff = rows.filter(x => x.rstate === 'reacted' || x.rstate === 'no reaction' || x.rstate === 'waiting'),
+    reacted = aff.filter(x => x.rstate === 'reacted');
+  return { delivery: n ? ok / n : null, timeliness: n ? first / n : null, cost: ok ? frames / ok : null,
+    resilience: res(rows), resilienceTimely: res(recoveryOf(s, final, true)),
+    reaction: { pairs: aff.length, reacted: reacted.length, mean: reacted.length ? reacted.reduce((p, x) => p + x.reaction, 0) / reacted.length : null } };
+}
+// The Key indicators card, above the Network card
+function kpiCard() {
+  const k = keyIndicators(sim, false), pct = v => v == null ? '–' : (v * 100).toFixed(0) + '%';
+  const res = (r, n, m) => r[n] ? `${r[m]} of ${r[n]}${r.mean != null ? `, mean ${r.mean.toFixed(1)} s` : ''}` : '–';
+  const tiles = [['Delivery', pct(k.delivery), 'requests satisfied'], ['Timeliness', pct(k.timeliness), 'satisfied on the first try'],
+    ['Cost', k.cost == null ? '–' : k.cost.toFixed(1), 'frames per satisfied request'],
+    ['Resilience', res(k.resilience, 'pairs', 'recovered'), 'disruption and consumer pairs recovered'],
+    ['Resilience on time', res(k.resilienceTimely, 'pairs', 'recovered'), 'recovered counting first tries only'],
+    ['Reaction', res(k.reaction, 'pairs', 'reacted'), 'affected pairs whose strategy found another path']];
+  return `<div class="panel card wide"><h2 class="h2" title="Third tier: the overall performance of the network, the strategy and the routing">Key indicators</h2>
+    <dl class="effsum">${tiles.map(([t, v, sub]) => `<div><dt>${t}</dt><dd>${v} <small>${sub}</small></dd></div>`).join('')}</dl></div>`;
+}
+function renderRecovery() {
+  const el = $('recov'), rows = recoveryOf(sim, false), timely = recoveryOf(sim, false, true);
+  if (!rows.length) { el.innerHTML = '<p class="hint">Recovery appears here after a disruption: a link out of range or lossy, a radio or a cache switched off, a producer leaving, a FIB emptied.</p>'; return; }
+  const lvl = r => r.steady == null ? '–' : r.kind === 'file' ? (r.steady * 1024 * 8 / REC.win / 1e6).toFixed(2) + ' Mbit/s' : (r.steady * 100).toFixed(0) + '%';
+  const sec = v => v == null ? '–' : v.toFixed(1) + ' s';
+  const react = r => r.rstate === 'reacted' ? sec(r.reaction) : r.rstate === 'waiting' ? 'waiting…' : r.rstate;
+  const time = r => r.state === 'recovered' ? (r.time === 0 ? '0 s (no gap)' : r.time.toFixed(0) + ' s') : r.state === 'recovering' ? 'recovering…' : r.state;
+  el.innerHTML = `<table class="t efft"><tr><th>Disruption</th><th>Consumer</th><th>Steady level</th><th>Recovery time</th><th title="The same, counting only requests satisfied on the first try">On time</th><th title="From the last Data before the disruption to the first Data of a request sent after it">Data gap</th><th title="Until a request is satisfied on its first try over a path that avoids the failed element">Reaction</th><th>Extra frames</th><th>Extra air time</th></tr>${rows.map((r, i) =>
+    `<tr><td>${r.t.toFixed(1)} s ${esc(r.what)}</td><td>${r.c}</td><td>${lvl(r)}</td><td>${time(r)}</td><td>${time(timely[i])}</td><td>${sec(r.gap)}</td><td>${react(r)}</td><td>${r.frames == null ? '–' : Math.round(r.frames)}</td><td>${r.air == null ? '–' : r.air.toFixed(2) + ' s'}</td></tr>`).join('')}</table>`;
+}
 function runHeadless(cfg) {
   const s = new Sim(cfg); s.quiet = true; s.keepFrames = false; s.noLog = true;
   const act = s.consIds.filter(c => s.consumers[c]);
@@ -2183,7 +2410,7 @@ function runHeadless(cfg) {
   return { kinds: Object.fromEntries(s.prefixes.map(p => [p.kind, p.strategy])), routing: cfg.routing,
     total: sum.reduce((a, x) => a + x.total, 0), lost: sum.reduce((a, x) => a + x.lost, 0), retx: sum.reduce((a, x) => a + (x.retx || 0), 0),
     dataFrames: st.frames.I + st.frames.D + st.frames.N, nlsrFrames: st.frames.H + st.frames.S + st.frames.L,
-    dupI: st.dupI, dupD: st.dupD, simTime: s.now, airData: st.airData / 1e6, airNlsr: st.airNlsr / 1e6, hits: st.hits,
+    dupI: st.dupI, dupD: st.dupD, simTime: s.now, airData: st.airData / 1e6, airNlsr: st.airNlsr / 1e6, hits: st.hits, recovery: recoveryOf(s, true), indicators: keyIndicators(s, true),
     per: act.map((c, i) => perConsumer(c, sum[i])) };
 }
 // Every profile runs with and without NLSR; "all" and "vary" profiles run once per strategy (of the profile's kind of
@@ -2318,16 +2545,17 @@ function renderRoutes() {
   }
   $('gRoutes').innerHTML = h;
 }
-// Caption under a producer or consumer: its role and its kind of data when more than one is in use
+// Caption under a producer or consumer: its role, and below it its kind of data when more than one is in use
 function captionOf(n) {
-  const two = sim.prefixes.length > 1, a = sim.cfg.apps[n.id];
-  return (n.role === 'P' ? 'Producer' : 'Consumer') + (two ? ', ' + KINDS[a.kind].label.toLowerCase() : '');
+  const a = sim.cfg.apps[n.id];
+  return sim.prefixes.length > 1 ? [n.role === 'P' ? 'Producer' : 'Consumer', KINDS[a.kind].label.toLowerCase()] : [n.role === 'P' ? 'Producer' : 'Consumer'];
 }
-// Whether the application is running now: a producer connected, a consumer started and not stopped
-function appRunning(n) {
-  if (n.role === 'P') { const pr = sim.producers.get(n.id); return !!(pr && pr.on); }
-  const a = sim.consumers[n.id], c = sim.cfg.apps[n.id];
-  return !!(a && !a.stopped && sim.now >= (c.start || 0));
+// Struck through when the application does not work: switched off in the applications table, a producer disconnected
+// after it was connected (by an event or the switch), or a consumer that stopped. Not yet started is not struck.
+function appOff(n) {
+  if (!sim.cfg.apps[n.id].on) return true;
+  if (n.role === 'P') { const pr = sim.producers.get(n.id); return !!(pr && pr.everOn && !pr.on); }
+  const a = sim.consumers[n.id]; return !!(a && a.stopped);
 }
 function renderNodes() {
   let h = '';
@@ -2337,7 +2565,10 @@ function renderNodes() {
     h += `<g class="${['nd', n.role || '', n.caching ? '' : 'nocache', n.on ? '' : 'down', sel ? 'sel' : ''].join(' ')}" data-node="${d.id}">`;
     if (sel) h += `<circle class="ring" cx="${A.x}" cy="${A.y}" r="29"/>`;
     h += `<circle class="body" cx="${A.x}" cy="${A.y}" r="23"><title>${d.id}</title></circle><text class="id" x="${A.x}" y="${A.y}">${d.id}</text>`;
-    if (n.role) h += `<text class="cap${appRunning(n) ? '' : ' idle'}" x="${A.x}" y="${A.y + (d.row < 1 ? -38 : 44)}">${esc(captionOf(n))}</text>`;
+    if (n.role) {
+      const lines = captionOf(n), y0 = A.y + (d.row < 1 ? -38 - 13 * (lines.length - 1) : 44);
+      h += `<text class="cap${appOff(n) ? ' idle' : ''}" x="${A.x}" y="${y0}">${lines.map((t, i) => `<tspan x="${A.x}" dy="${i ? 13 : 0}">${esc(t)}</tspan>`).join('')}</text>`;
+    }
     if (!n.caching) h += badge('b-off', A.x + 26, A.y + 24, 'no cache'); else if (n.cs.size && UI.showBadges) h += badge('b-cs', A.x + 26, A.y + 24, 'CS ' + n.cs.size);
     if (n.pit.size && UI.showBadges) h += badge('b-pit', A.x + 26, A.y - 24, 'PIT ' + n.pit.size);
     const nf = n.fibFor(pre).filter(x => x.face.kind !== 'app').length;
@@ -2651,6 +2882,7 @@ function renderReadouts() {
   // Air time of the shared medium: NDN frames, NLSR frames and idle, as shares of the time simulated so far
   const idle = Math.max(0, air - au.data - au.nlsr), sw = c => `<span class="sw" style="background:${c}"></span>`;
   const share = v => air > 0 ? (v / air * 100).toFixed(1) + '%' : '–';
+  h += kpiCard();
   h += `<div class="panel card wide"><h2 class="h2">Network <b>${sim.prefixes.map(p => STRAT_LABEL[p.strategy]).join(' + ')}</b></h2>
     ${stackBar([[au.data, 'var(--interest)'], [au.nlsr, 'var(--hello)'], [idle, 'transparent']], air)}
     <div class="airkey"><span>Air time used <b>${util.toFixed(1)}%</b></span><span>${sw('var(--interest)')}NDN frames <b>${share(au.data)}</b> (${au.data.toFixed(2)} s)</span>
@@ -2777,7 +3009,7 @@ const ROUTING_LABEL = { static: 'Static', nlsr: 'NLSR', none: 'None' };
 function updateChips() {
   const c = UI.cfg, used = prefixesOf(c);
   const strat = used.length > 1 ? used.map(p => `${KINDS[p.kind].label} ${STRAT_LABEL[p.strategy]}`).join(' · ') : STRAT_LABEL[used[0].strategy];
-  $('chips').innerHTML = [['Strategy', strat], ['Layer', c.layer === 'L2' ? 'L2 (Ethernet)' : 'L3 (UDP)'], ['Faces', c.faces === 'ucast' ? 'Unicast' : 'Multicast'],
+  $('chips').innerHTML = [['Strategy', strat], ['Layer', c.layer === 'L2' ? 'L2 (Ethernet)' : 'L3 (UDP)'], ['Faces', { ucast: 'Unicast', mcast: 'Multicast', both: 'Both' }[c.faces]],
     ['Routing', ROUTING_LABEL[c.routing]], ['Data', used.map(p => KINDS[p.kind].label).join(' + ')], ['Seed', c.seed]].map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('');
 }
 function renderProfiles() {
@@ -2800,7 +3032,7 @@ function renderSources() {
     ['Loss', 'Per-frame loss rate per link; all tries of a frame share its fate', 'wmediumd\'s error-probability mode, which draws one random value per frame for all its tries (per-frame Nakagami fading behaves alike)', 'config.c:80-83, wmediumd.c:638, 673', 'Yes: wmediumd\'s error-probability mode draws one value per frame for all its tries; frame loss equals the configured probability'],
     ['Range', 'Explicit link list: a pair is in range or not; no positions or propagation model', 'Sketch assumption (replaces Mininet-WiFi positions and the wmediumd propagation model)', '', 'Yes: wmediumd\'s error-probability mode with exactly these 20 pairs; every other pair hears nothing (78 of 78 pairs checked)'],
     ['Overhearing', 'Every node in range hears a unicast frame; it is discarded below NFD unless addressed to it', 'NFD Ethernet capture filter; kernel at L3', 'ethernet-channel.cpp:220-230'],
-    ['Faces', 'Unicast only: one permanent unicast face per configured neighbour, NFD multicast faces off. Multicast only: one ad hoc multicast face (01:00:5e:00:17:aa or 224.0.23.170)', 'NFD configuration set through Mini-NDN (infoedit, nfdc)', 'nfd.conf.sample.in:163-167, 220-222'],
+    ['Faces', 'Unicast only: one permanent unicast face per configured neighbour, NFD multicast faces off. Multicast only: one ad hoc multicast face (01:00:5e:00:17:aa or 224.0.23.170). Both: the two together, routes on the unicast faces, Self-Learning discovery on every face (self-learning-strategy.cpp:147-157)', 'NFD configuration set through Mini-NDN (infoedit, nfdc)', 'nfd.conf.sample.in:163-167, 220-222'],
     ['Strategy scope', 'Each kind of data in use has its own strategy, set on its name; a name takes the strategy of its longest matching prefix; / keeps Best Route; NLSR sets Multicast on its own sync and LSA prefixes', 'NFD strategy_choice defaults; Mini-NDN Nfdc.setStrategy; NLSR', 'nfd.conf.sample.in strategy_choice, strategy-choice.cpp, nlsr.cpp:88-89'],
     ['Kinds of data', 'Sensor, File, Stream and Ping, each under its own name with its own strategy; FIB lookups by longest prefix match; ASF keeps its measurements per name', 'NFD strategy choice, FIB and measurements tables', 'strategy-choice.cpp, fib.cpp findLongestPrefixMatch, asf-measurements.cpp'],
     ['Producers', 'p1 and p2 on the left, and optionally m2. Static routes and NLSR route each kind of data to the nearest producer that announces it, the producer itself excluded. A producer that is on at the start is announced, and stays announced while it is disconnected', 'NLSR Name LSAs from the advertising section of nlsr.conf: next hops of every origin router merged, lowest cost per face, best 3', 'name-prefix-table.cpp:68, name-prefix-table-entry.cpp:33-42, nexthop-list.hpp:57-70, fib.cpp:90-99', 'Yes: with two producers Best Route keeps sending to the stopped one (30 of 60 readings, as here), ASF, Multicast and Self-Learning switch to the other'],
@@ -2825,6 +3057,19 @@ function renderSources() {
   $('tgRefs').addEventListener('change', e => $('sources').classList.toggle('hide-ref', !e.target.checked));
 }
 
+/* ---------- Colour theme ---------- */
+// The page follows the system setting until a theme is chosen with the toggle; the choice is remembered in this browser
+const THEME_KEY = 'ndn-lab-theme', themeQuery = matchMedia('(prefers-color-scheme: dark)');
+function themeNow() { return document.documentElement.dataset.theme || (themeQuery.matches ? 'dark' : 'light'); }
+function syncThemeButtons() { for (const b of document.querySelectorAll('[data-theme-set]')) b.setAttribute('aria-pressed', String(b.dataset.themeSet === themeNow())); }
+for (const b of document.querySelectorAll('[data-theme-set]')) b.addEventListener('click', () => {
+  document.documentElement.dataset.theme = b.dataset.themeSet;
+  try { localStorage.setItem(THEME_KEY, b.dataset.themeSet); } catch (e) {}
+  syncThemeButtons(); renderNow();
+});
+themeQuery.addEventListener('change', () => { syncThemeButtons(); renderNow(); });
+syncThemeButtons();
+
 /* ---------- Main loop ---------- */
 // Simulated time as minutes and seconds with milliseconds, e.g. 62 min 05.123 s
 function hms(t) {
@@ -2847,7 +3092,7 @@ function frame(ts) {
 }
 
 initControls();
-loadProfile('reference');
+loadProfile('');   // manual mode with the default settings
 if (location.hash === '#selftest') selftest();
 syncTransport();
 requestAnimationFrame(frame);
